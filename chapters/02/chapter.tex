@@ -1,0 +1,240 @@
+\chapter{Framen}
+\label{ch:frameformat}
+
+{\large\itshape Fält för fält, från SOF till EOF.\par}
+
+\begin{chapterbox}{I det här kapitlet}
+\begin{itemize}
+  \item Dataframens sju fält, och vad vart och ett är till för.
+  \item Identifieraren, som är två saker samtidigt: adress och prioritet.
+  \item Varför CAN inte har någon destinationsadress.
+  \item DLC, och varför den är fyra bitar när nyttolasten är högst åtta byte.
+  \item Kvittensen som alla mottagare skriver i samma bit.
+\end{itemize}
+\end{chapterbox}
+
+\section{Framens form}
+
+En CAN-dataframe med 11-bitars identifierare ser ut så här:
+
+\bookfigure{frame_layout}{Dataframens fält. Bredderna är i bitar, före bitstoppning.}{fig:frame}
+
+Sju fält, och en gräns som är viktigare än de andra: allt fram till och med RTR-biten är
+\textbf{arbitreringsfältet}, och det är där flera samtidigt sändande noder avgör vem som får
+fortsätta (\kapref{ch:arbitrering}).
+
+\begin{booktable}{@{}llL@{}}
+\thead{Fält} & \thead{Bitar} & \thead{Innehåll} \\ \midrule
+SOF & 1 & Start of frame. En dominant bit, som säger att en frame börjar. \\
+Identifierare & 11 & Vad framen innehåller, och därmed dess prioritet. \\
+RTR & 1 & Remote transmission request: dominant för en dataframe. \\
+IDE & 1 & Identifier extension: dominant för 11-bitars identifierare. \\
+r0 & 1 & Reserverad, dominant. \\
+DLC & 4 & Data length code: antal databytes, 0--8. \\
+Data & 0--64 & Nyttolasten, noll till åtta byte. \\
+CRC & 15 & Checksumma över allt föregående. \\
+CRC-avgränsare & 1 & Recessiv. \\
+ACK-lucka & 1 & Sändaren släpper; en mottagare drar ned. \\
+ACK-avgränsare & 1 & Recessiv. \\
+EOF & 7 & End of frame, sju recessiva bitar. \\
+\end{booktable}
+
+Efter EOF följer dessutom \textbf{intermission}, tre recessiva bitar då ingen får börja sända.
+Tillsammans med EOF ger det tio recessiva bitar i rad mellan två frames --- ett mönster som inte
+kan uppstå någon annanstans, eftersom bitstoppningen (\kapref{ch:stuffing}) gör att fem lika
+bitar i rad är det mesta som förekommer inuti en frame.
+
+\begin{aside}
+\note[Räkna] $1 + 12 + 6 + 64 + 16 + 2 + 7 = 108$ bitar för den längsta dataframen, före
+stoppning. Bitstoppningen lägger till som mest ett tjugotal, så en maximal frame är omkring
+130 bitar. Vid 1~Mbit/s tar den alltså ungefär 130~µs. Den siffran är värd att komma ihåg: den
+är svaret på "hur länge kan en sändning hålla på?".
+\end{aside}
+
+\section{Identifieraren}
+
+Identifieraren är CAN:s mest särpräglade designval, och den är två saker samtidigt.
+
+\subsection{Den säger vad framen innehåller}
+
+Den är \textbf{inte} en mottagaradress. Den beskriver \emph{innehållet}:
+
+\begin{narrowtable}{@{}ll@{}}
+\thead{Identifierare} & \thead{Betydelse} \\ \midrule
+\code{0x301} & Motorvarvtal \\
+\code{0x302} & Kylvätsketemperatur \\
+\code{0x400} & Statusförfrågan \\
+\end{narrowtable}
+
+En nod som sänder \code{0x301} säger inte "till instrumentpanelen", den säger "varvtalet är
+detta". Vem som lyssnar är inte sändarens problem, och det får konsekvenser som är lätta att
+missa i början:
+
+\begin{itemize}
+  \item \textbf{Flera mottagare kan reagera på samma frame.} Både instrumentpanelen och
+    växellådsstyrningen kan behöva varvtalet, och ingen av dem behöver veta om den andra.
+  \item \textbf{En ny nod kan läggas till utan att någon gammal ändras.} Den börjar bara lyssna
+    efter de identifierare den bryr sig om.
+  \item \textbf{Filtreringen ligger hos mottagaren.} Varje nod tar emot varje frame och avgör
+    själv om den angår den --- i mjukvara, eller i kontrollerns filterhårdvara.
+\end{itemize}
+
+\subsection{Den bestämmer prioritet}
+
+Samtidigt är identifieraren framens prioritet, och där gäller att \textbf{lägre numeriskt värde
+vinner}. Det följer direkt av \kapref{ch:buss}: identifieraren sänds MSB först, en nolla är
+dominant, och den dominanta biten vinner.
+
+Det betyder att adressrymden måste planeras. En identifierare är inte bara ett namn; den är en
+plats i en prioritetsordning som gäller hela bussen. Bromsar får låga nummer, kupévärme höga.
+
+\begin{aside}
+\note[En vanlig fallgrop] Två noder får aldrig sända \emph{samma} identifierare. Två frames med
+samma identifierare är bit för bit identiska genom hela arbitreringsfältet, så ingen av noderna
+upptäcker den andra --- och så fort deras datafält skiljer sig åt uppstår ett bitfel mitt i
+framen. Identifierare tilldelas per sändande nod, inte per meddelandetyp.
+\end{aside}
+
+\subsection{Utökade identifierare}
+
+CAN 2.0B tillåter 29-bitars identifierare. Skillnaden syns i IDE-biten: recessiv i stället för
+dominant, och därefter följer ytterligare 18 identifierarbitar. Den här boken håller sig till
+11 bitar, men det är värt att veta varför valet syns i framen: en nod som bara förstår 11 bitar
+måste kunna se, tidigt och entydigt, att den inte förstår den här framen.
+
+Notera också prioritetskonsekvensen: en 11-bitars frame med samma inledande bitar vinner alltid
+över en 29-bitars, eftersom dess IDE-bit är dominant.
+
+\section{RTR och fjärrframes}
+
+RTR-biten skiljer två sorters frames:
+
+\begin{narrowtable}{@{}lll@{}}
+\thead{RTR} & \thead{Sorts frame} & \thead{Betydelse} \\ \midrule
+\dom{} (0) & Dataframe & "Här är datan." \\
+\rec{} (1) & Fjärrframe & "Skicka mig datan." \\
+\end{narrowtable}
+
+En \textbf{fjärrframe} har samma identifierare som den dataframe den efterfrågar, en DLC men
+\emph{inget} datafält. Tanken är att en nod ska kunna be om ett värde i stället för att vänta på
+att det sänds.
+
+I praktiken används fjärrframes sällan i moderna konstruktioner. De komplicerar mer än de
+tillför: två noder kan svara på samma begäran, och en nod som inte förstår mekanismen ser en
+frame med en DLC som inte stämmer med datafältets längd.
+
+Att RTR ligger \emph{i} arbitreringsfältet är däremot inte godtyckligt. Det gör att en dataframe
+alltid vinner över en fjärrframe med samma identifierare --- den som har datan får företräde över
+den som ber om den, vilket är precis rätt prioritering.
+
+\section{Kontrollfältet och DLC}
+
+Tre bitar administration, sedan fyra bitar längd:
+
+\begin{itemize}
+  \item \textbf{IDE} --- dominant för 11 bitars identifierare.
+  \item \textbf{r0} --- reserverad, sänds dominant. Den finns för framtida bruk, och den
+    framtiden kom aldrig för klassisk CAN.
+  \item \textbf{DLC} --- fyra bitar, värde 0--8.
+\end{itemize}
+
+Fyra bitar rymmer 0--15, men bara 0--8 är meningsfulla. Vad händer med 9--15? I standarden är de
+reserverade och ska behandlas som 8. I praktiken är det en av de punkter där kontrollrar skiljer
+sig åt --- och det är därför en drivrutin som \emph{sänder} aldrig ska producera en DLC över 8,
+oavsett vad hårdvaran råkar göra med den.
+
+\section{CRC-fältet}
+
+Femton bitars checksumma, beräknad över allt från SOF till och med datafältet, följd av en
+recessiv avgränsare. Hur den beräknas står i \kapref{ch:stuffing}.
+
+Avgränsaren finns av en praktisk anledning: den ger mottagarna en känd, recessiv bit att ta
+sats i innan ACK-luckan, som är den enda bit i hela framen där någon annan än sändaren driver
+bussen.
+
+\section{ACK-fältet}
+
+Här händer något som inte har någon motsvarighet i ett hemsnickrat protokoll.
+
+Sändaren sänder ACK-luckan \textbf{recessivt} --- alltså släpper den. Varje mottagare som har
+tagit emot framen och fått CRC:n att stämma drar samtidigt ned den \textbf{dominant}. Sändaren
+läser tillbaka bussen och ser:
+
+\begin{narrowtable}{@{}ll@{}}
+\thead{Sändaren läser} & \thead{Slutsats} \\ \midrule
+\dom{} & Minst en nod tog emot framen felfritt \\
+\rec{} & Ingen gjorde det \\
+\end{narrowtable}
+
+Tre saker är värda att stanna vid:
+
+\textbf{Kvittensen kostar ingenting.} Den är en enda bit, inuti framen, och den kräver ingen
+svarsframe. Jämför med ett ACK-meddelande som måste konstrueras, sändas, arbitreras om och
+kvitteras i sin tur.
+
+\textbf{Den säger inte \emph{vem}.} Alla mottagare drar ned samma bit samtidigt. Sändaren vet att
+\emph{någon} hörde, aldrig hur många eller vilka. Behövs det måste applikationen svara med en
+egen frame.
+
+\textbf{Den säger inte att någon \emph{brydde sig}.} En nod som filtrerar bort framen som
+ointressant kvitterar den ändå, för den tog emot den felfritt. Kvittensen är ett kvitto på
+\emph{överföringen}, inte på \emph{behandlingen}.
+
+\begin{simplification}
+\note[Förenkling] Den förenklade kontrollern i \kapref{ch:kursen} \emph{släpper} ACK-luckan som
+sändare och \emph{drar ned} den som mottagare, precis enligt standarden --- men den läser aldrig
+tillbaka vad som hände där. En frame som ingen kvitterar fullbordas därför som om allt gått bra.
+\end{simplification}
+
+\section{EOF och intermission}
+
+Sju recessiva bitar avslutar framen, och tre till av intermission håller bussen ledig innan
+någon får börja om.
+
+Sju recessiva i rad är fler än bitstoppningen någonsin tillåter inuti en frame, vilket gör EOF
+till ett entydigt slutmärke: en mottagare som ser sju recessiva bitar vet att framen är slut,
+oavsett var den tappade tråden.
+
+Det är också här felsignalering sker: en nod som upptäcker ett fel avbryter genom att sända sex
+dominanta bitar i rad --- ett mönster som är omöjligt i en korrekt frame, och som därför inte kan
+förväxlas med data. \Kapref{ch:fel} går igenom det.
+
+\section*{Övningar}
+
+\exercise{Läs framen}{Avkodning}
+\label{ex:2:1}
+En frame har identifieraren \code{0x2A7}, DLC 5 och databytesen \code{01 02 03 04 05}.
+\begin{enumerate}[a)]
+  \item Hur många bitar är framen, före bitstoppning?
+  \item Hur lång tid tar den vid 1~Mbit/s, före stoppning?
+  \item Vilken identifierare skulle ha vunnit över den i en arbitrering: \code{0x2A6} eller
+    \code{0x2A8}?
+\end{enumerate}
+
+\exercise{Ingen adress}{Resonemang}
+\label{ex:2:2}
+Ett system har en temperatursensor och två noder som båda behöver temperaturen.
+\begin{enumerate}[a)]
+  \item Hur många frames måste sensorn sända?
+  \item Hur skulle samma sak sett ut i ett protokoll med destinationsadress?
+  \item En tredje nod tillkommer som också vill ha temperaturen. Vad måste ändras i sensorn?
+\end{enumerate}
+
+\exercise{Kvittensen}{Resonemang}
+\label{ex:2:3}
+En nod sänder en frame och läser tillbaka en dominant ACK-lucka.
+\begin{enumerate}[a)]
+  \item Vad vet den säkert?
+  \item Vad vet den inte?
+  \item Noden är ensam på bussen och sänder. Vad läser den i ACK-luckan, och vad ska en
+    standardenlig kontroller göra då?
+\end{enumerate}
+
+\exercise{DLC}{Resonemang}
+\label{ex:2:4}
+DLC är fyra bitar men bara värdena 0--8 är meningsfulla.
+\begin{enumerate}[a)]
+  \item Varför gjordes fältet fyra bitar brett?
+  \item En drivrutin skriver DLC 9 till sin kontroller. Vems ansvar är det att det inte händer,
+    och varför just den sidan?
+\end{enumerate}

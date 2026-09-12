@@ -1,0 +1,57 @@
+\chapter*{Förord}
+\addcontentsline{toc}{chapter}{Förord}
+\markboth{Förord}{Förord}
+
+Ett hemsnickrat protokoll är lärorikt att bygga. Man bestämmer själv var framen börjar, hur lång
+den är, hur den skyddas mot fel, och vad som ska hända när ett svar uteblir. Varje mekanism blir
+ens egen --- och varje mekanism blir något som måste skrivas och underhållas.
+
+Den här boken handlar om vad som händer när någon annan redan har bestämt allt det, en gång, och
+gjutit det i kisel.
+
+CAN är från 1986, det sitter i varje bil som byggts sedan mitten av nittiotalet, och det löser
+nästan exakt de problem ni just löste själva --- fast i hårdvara, och bättre. Framing, checksumma,
+kollisionshantering och kvittens ligger i kontrollern. Det som återstår för mjukvaran är att lämna
+över en identifierare, en längd och några databytes, och sedan läsa av hur det gick.
+
+\begin{aside}
+\note Att CAN gör det åt er betyder inte att ni slipper förstå det. Bygger ni kontrollern är
+protokollet er kravspecifikation, bit för bit. Skriver ni drivrutinen måste ni hantera precis det
+kontrollern \emph{inte} kan säga er: varför en förlorad arbitrering ser ut som en lyckad
+sändning, varför en frame som ingen kvitterar ändå fullbordas, och varför en mottagen frame kan
+försvinna under näsan på er. Allt det är konsekvenser av hur CAN fungerar, och de står i den här
+boken.
+\end{aside}
+
+\section*{Vad boken täcker}
+
+\Kapref{ch:buss} börjar vid ledningarna: varför en delad buss, vad dominanta och recessiva bitar
+är, och varför den asymmetrin är hela grunden. \Kapref{ch:frameformat} går igenom CAN-framen fält för fält.
+\Kapref{ch:stuffing} tar bitstoppningen och CRC-15:an, de två mekanismerna som gör att en frame
+överlever en störig buss. \Kapref{ch:arbitrering} arbetar igenom arbitreringen bit för bit, för
+hand. \Kapref{ch:tajming} handlar om bittajming och sampelpunkten: hur noder utan gemensam klocka
+ändå läser samma bit samtidigt. \Kapref{ch:fel} beskriver felhanteringen i riktig CAN --- felframes,
+felräknare och bus-off.
+
+\Kapref{ch:kursen} är bokens enda kapitel som inte handlar om CAN i allmänhet. Det beskriver den
+förenklade kontroller som byggs i undervisningen, vad den implementerar av allt det föregående,
+och vad den medvetet låter bli. Det kapitlet är det som kommer till användning vid felsökning ---
+från båda hållen.
+
+\section*{Vad boken inte täcker}
+
+Boken beskriver \textbf{klassisk CAN} med 11-bitars identifierare, alltså CAN 2.0A. Utökade
+29-bitars identifierare (2.0B) nämns där de påverkar framens form, men arbetas inte igenom. CAN~FD
+och CAN~XL ligger utanför, liksom högre lager som CANopen och J1939.
+
+Boken beskriver inte heller elektriken i detalj: differentiell signalering, termineringens
+fysik och kabellängdens inverkan berörs bara så långt det behövs för att förstå varför bussen
+ser ut som den gör.
+
+\section*{Övningar}
+
+Varje kapitel slutar med några övningar. De görs med papper och penna --- det finns ingen kod att
+kompilera i den här boken --- och svaren på samtliga står i Appendix~A.
+
+Övningarna är korta med avsikt. De är till för att kontrollera att kapitlet fastnade, inte för
+att ta en kväll.

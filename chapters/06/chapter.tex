@@ -1,0 +1,184 @@
+\chapter{Felhantering}
+\label{ch:fel}
+
+{\large\itshape Fem sorters fel, en signal, och en nod som stänger av sig själv.\par}
+
+\begin{chapterbox}{I det här kapitlet}
+\begin{itemize}
+  \item De fem fel en CAN-nod kan upptäcka, och vem som upptäcker vad.
+  \item Felframen: hur en nod avbryter en pågående överföring.
+  \item Felräknarna, och de tre tillstånden en nod kan vara i.
+  \item Bus-off: när en nod kopplar bort sig själv, och varför det är rätt beteende.
+\end{itemize}
+\end{chapterbox}
+
+\section{Fem sorters fel}
+
+CAN upptäcker fel på fem sätt. Tre av dem har vi redan gått igenom under andra namn:
+
+\begin{booktable}{@{}lLl@{}}
+\thead{Fel} & \thead{Vad det är} & \thead{Vem ser det} \\ \midrule
+Bitfel & En sändande nod läser tillbaka något annat än den sände & Sändaren \\
+Stoppfel & Sex lika bitar i rad där femregeln kräver en flank & Alla \\
+CRC-fel & Den mottagna checksumman stämmer inte & Mottagare \\
+Formatfel & Ett fält som måste vara recessivt är det inte & Alla \\
+Kvittensfel & Ingen drog ned ACK-luckan & Sändaren \\
+\end{booktable}
+
+Tillsammans ger de en restfelssannolikhet som brukar anges till omkring $10^{-11}$ av de fel som
+uppstår --- alltså ungefär ett oupptäckt fel per tusen år på en hårt belastad buss. Det är inte
+en slump utan resultatet av att fem oberoende mekanismer överlappar.
+
+\subsection{Bitfel, och undantagen}
+
+En sändande nod jämför hela tiden det den sänder med det som ligger på bussen. Skiljer de sig är
+det ett bitfel --- \emph{utom} på två ställen där en skillnad är fullt normal:
+
+\begin{itemize}
+  \item \textbf{Under arbitreringsfältet.} Recessiv ut och dominant in betyder förlorad
+    arbitrering, inte fel (\kapref{ch:arbitrering}).
+  \item \textbf{I ACK-luckan.} Sändaren sänder recessivt och \emph{hoppas} på dominant
+    (\kapref{ch:frameformat}).
+\end{itemize}
+
+Att skilja de två fallen från ett riktigt bitfel är en av de saker som gör en CAN-kontroller
+mer invecklad än den ser ut.
+
+\section{Felframen}
+
+När en nod upptäcker ett fel säger den inte till efteråt. Den avbryter framen \textbf{medan den
+pågår}, genom att sända en \textbf{felframe}: sex dominanta bitar i rad.
+
+Sex dominanta bitar är omöjliga i en korrekt frame --- femregeln ser till att det aldrig går mer
+än fem --- så mönstret kan inte förväxlas med data. Varje annan nod på bussen ser det, förstår att
+framen är trasig, och kastar den.
+
+Och eftersom alla noder ser felet kommer flera av dem att sända sin egen felflagga i sin tur.
+Resultatet är en serie dominanta bitar, följd av en avgränsare på åtta recessiva.
+
+Två saker följer:
+
+\textbf{Alla noder kastar framen, inte bara den som upptäckte felet.} Bussen hålls konsistent:
+antingen tar alla emot framen, eller ingen. Det är en starkare garanti än den ett
+hemmasnickrat protokoll normalt ger sig på.
+
+\textbf{Sändaren skickar om automatiskt.} Kontrollern gör det själv, utan att mjukvaran blir
+inblandad. En drivrutin som skickar en frame och får veta att det gick bra kan alltså ha fått
+den omsänd flera gånger utan att märka det.
+
+\section{Felräknarna}
+
+Här kommer den del av CAN som är minst uppenbar och mest genomtänkt.
+
+En nod som råkar ut för fel ska säga ifrån. En nod som är \emph{trasig} ska sluta säga ifrån ---
+annars förstör den bussen för alla andra genom att sända felframes i ett.
+
+CAN skiljer dem åt med två räknare i varje nod:
+
+\begin{itemize}
+  \item \textbf{TEC} --- transmit error counter, fel medan noden sände.
+  \item \textbf{REC} --- receive error counter, fel medan den tog emot.
+\end{itemize}
+
+Reglerna i sammandrag: ett fel ökar räknaren med 8 (sändarsidan) eller 1 (mottagarsidan), och en
+lyckad överföring minskar den med 1.
+
+\textbf{Asymmetrin är hela poängen.} En nod som verkligen är trasig är inblandad i varje fel och
+ökar snabbt. En nod som bara råkar vara med på en störig buss ökar långsamt och hinner arbeta av
+sig. Räknarna mäter alltså inte "hur många fel har hänt" utan "hur sannolikt är det att felet är
+mitt".
+
+\subsection{De tre tillstånden}
+
+\bookfigure{error_states}{En nods tre feltillstånd och övergångarna mellan dem.}{fig:errorstates}
+
+\begin{booktable}{@{}llL@{}}
+\thead{Tillstånd} & \thead{Villkor} & \thead{Beteende} \\ \midrule
+Error active & TEC och REC $\leq$ 127 & Normal drift; sänder \emph{aktiva} felflaggor (dominanta) \\
+Error passive & Någon räknare $>$ 127 & Sänder \emph{passiva} felflaggor (recessiva) och väntar extra mellan sändningar \\
+Bus off & TEC $>$ 255 & Sänder ingenting alls \\
+\end{booktable}
+
+Övergången till \emph{error passive} är den intressanta. En passiv felflagga är recessiv, vilket
+betyder att den inte stör någon annan. Noden får fortfarande delta, den får fortfarande
+rapportera, men den kan inte längre dra ned bussen för allas räkning.
+
+\subsection{Bus off}
+
+Vid TEC över 255 kopplar noden bort sig själv. Den sänder inte, kvitterar inte, stör inte.
+
+Det är protokollets sista försvar, och det är värt att stanna vid hur ovanligt beteendet är: en
+nod som konstaterar att den själv troligen är den trasiga delen, och som drar den slutsatsen
+utan att någon talar om det för den.
+
+En nod i bus off kan tas tillbaka --- typiskt efter att ha sett bussen ledig ett visst antal gånger,
+eller efter att mjukvaran återinitierar kontrollern. Att den återhämtningen finns är också
+avsiktligt: felet kan ha varit en lös kontakt som nu sitter.
+
+\begin{aside}
+\note[För den som skriver drivrutin] Bus off är det ena tillstånd mjukvaran inte kan ignorera.
+Allt annat hanterar kontrollern själv --- omsändningar, felframes, räknare --- men en nod i bus off
+kommer aldrig tillbaka av sig själv om konstruktionen kräver en återinitiering. Det är ett av de
+få ställen där felhanteringen når ända upp i applikationen.
+\end{aside}
+
+\section{Vad mjukvaran ser}
+
+Lägg märke till hur lite av allt det här som når mjukvaran i en fullständig kontroller:
+
+\begin{itemize}
+  \item Fel upptäcks i hårdvara.
+  \item Felframes sänds i hårdvara.
+  \item Omsändning sker i hårdvara.
+  \item Räknarna uppdateras i hårdvara.
+\end{itemize}
+
+Mjukvaran får en statusbit, kanske en felkod, och möjligheten att läsa räknarna. Det är en
+enorm mängd arbete som gjorts åt den --- jämför med ACK, timeout, retry och dubbletthantering i ett
+hemsnickrat protokoll, som är samma problem löst i mjukvara, sämre.
+
+\begin{simplification}
+\note[Förenkling] Den förenklade kontrollern i \kapref{ch:kursen} implementerar \emph{ingenting}
+av det här kapitlet utom stopp\-felet och CRC-kontrollen. Den sänder inga felframes, har inga
+felräknare, känner inte till error passive eller bus off, och skickar aldrig om automatiskt.
+Den signalerar bara att något gick fel, med en enda bit, och lämnar resten till mjukvaran.
+\end{simplification}
+
+\section*{Övningar}
+
+\exercise{Vem ser felet?}{Resonemang}
+\label{ex:6:1}
+För vart och ett av följande: vilken sorts fel är det, och vem upptäcker det?
+\begin{enumerate}[a)]
+  \item En störning flippar en bit i datafältet.
+  \item En störning flippar en bit i ett fält som måste vara recessivt.
+  \item Sändaren är ensam på bussen.
+  \item Sju lika bitar i rad passerar i arbitreringsfältet.
+\end{enumerate}
+
+\exercise{Räknarna}{Räkning}
+\label{ex:6:2}
+En nod börjar på TEC 0 och råkar ut för åtta sändningsfel i rad, följt av tjugo lyckade
+sändningar.
+\begin{enumerate}[a)]
+  \item Vad står TEC på efter felen?
+  \item Efter de lyckade sändningarna?
+  \item I vilket tillstånd är noden vid respektive tidpunkt?
+\end{enumerate}
+
+\exercise{Asymmetrin}{Resonemang}
+\label{ex:6:3}
+Ett fel ökar sändarens räknare med 8 men mottagarens med 1.
+\begin{enumerate}[a)]
+  \item Varför är ökningen olika stor?
+  \item En nod med trasig sändare och en nod på en störig buss ser likadana ut i början. Vad
+    skiljer dem åt efter en stund?
+\end{enumerate}
+
+\exercise{Bus off}{Resonemang}
+\label{ex:6:4}
+\begin{enumerate}[a)]
+  \item Varför kopplar en nod bort sig själv i stället för att fortsätta rapportera fel?
+  \item Vad hade hänt med bussen om den inte gjorde det?
+  \item Varför finns en väg tillbaka från bus off?
+\end{enumerate}

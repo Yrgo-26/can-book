@@ -1,0 +1,155 @@
+\chapter{Bittajming}
+\label{ch:tajming}
+
+{\large\itshape Hur noder utan gemensam klocka läser samma bit samtidigt.\par}
+
+\begin{chapterbox}{I det här kapitlet}
+\begin{itemize}
+  \item Varför en CAN-bit delas in i segment i stället för att bara räknas.
+  \item Sampelpunkten, och varför den ligger sent i bitperioden.
+  \item Synkronisering: hård vid SOF, mjuk vid varje flank därefter.
+  \item Vad som händer när två noders oscillatorer inte går lika fort.
+\end{itemize}
+\end{chapterbox}
+
+\section{Problemet}
+
+Varje nod har sin egen klocka. Ingen ledning bär takten --- CAN har fyra signaler och ingen av dem
+är en klocka.
+
+Ändå måste alla noder vara överens om var varje bit börjar och slutar, och det på bitnivå:
+arbitreringen i \kapref{ch:arbitrering} bygger på att två noder läser \emph{samma} bitintervall
+samtidigt och drar slutsatser av vad de ser. Är de ur fas jämför de olika bitar, och resultatet
+blir godtyckligt.
+
+Lösningen har två delar: en gemensam \emph{definition} av var i bitperioden man läser, och en
+mekanism som drar tillbaka noder som driver i väg.
+
+\section{Bitperioden i segment}
+
+En CAN-bit är inte ett odelat intervall utan delas in i fyra segment, mätta i
+\textbf{tidskvanta} --- korta, lika långa steg som noden räknar med sin egen klocka.
+
+\bookfigure{bit_timing}{Bitperiodens fyra segment. Sampelpunkten ligger mellan fas\-segment~1 och
+2, sent i perioden.}{fig:timing}
+
+\begin{booktable}{@{}llL@{}}
+\thead{Segment} & \thead{Längd} & \thead{Vad det är till för} \\ \midrule
+Synksegment & 1 tq & Här förväntas en flank ligga. \\
+Propagationssegment & 1--8 tq & Täcker signalens gångtid ut på bussen och tillbaka. \\
+Fassegment 1 & 1--8 tq & Före sampelpunkten; kan förlängas vid resynkronisering. \\
+Fassegment 2 & 1--8 tq & Efter sampelpunkten; kan förkortas. \\
+\end{booktable}
+
+\textbf{Sampelpunkten} ligger mellan fassegment 1 och 2. Det är där, och bara där, biten läses.
+
+\subsection{Varför sent i perioden}
+
+Sampelpunkten läggs typiskt 70--80~\% in i bitperioden. Skälet är propagationssegmentet, och det
+är samma skäl som gör att bussens längd begränsar hastigheten.
+
+Under arbitreringen måste en sändande nod hinna läsa tillbaka vad \emph{den bortersta} noden
+driver, innan biten är slut. Signalen ska alltså hinna ut och tillbaka. Propagationssegmentet är
+den tiden, och sampelpunkten måste ligga efter den --- annars läser noden bussen innan den andra
+nodens bit hunnit fram, och arbitreringen blir fel.
+
+\begin{aside}
+\note Det är därför bithastighet och kabellängd hänger ihop (\kapref{ch:buss}). Högre hastighet
+ger kortare bitperiod, alltså kortare propagationssegment i absolut tid, alltså kortare tillåten
+kabel. Sambandet är inte elektriskt utan logiskt: det handlar om vad arbitreringen kräver.
+\end{aside}
+
+\section{Synkronisering}
+
+\subsection{Hård synkronisering}
+
+Vid SOF --- den enda flank alla noder ser samtidigt när bussen varit ledig --- gör varje mottagare
+en \textbf{hård synkronisering}: den nollställer sin biträknare, oavsett var den stod.
+
+Det är en gång per frame, och det är den enda gången noderna får sätta klockan helt fritt.
+
+\subsection{Resynkronisering}
+
+Under framen räcker inte det. Två oscillatorer som skiljer sig en bråkdels procent driver isär
+långsamt, och över en frame på 130 bitar blir det mätbart.
+
+Därför resynkroniserar varje mottagare vid \emph{varje} recessiv-till-dominant-flank i strömmen.
+Ligger flanken tidigare än väntat förkortas fassegment 2; ligger den senare förlängs fassegment 1.
+Justeringen är begränsad till ett antal tidskvanta som kallas \emph{synchronization jump width}.
+
+\textbf{Och nu faller bitstoppningen på plats.} Femregeln i \kapref{ch:stuffing} garanterar att
+det aldrig går mer än fem bitperioder utan en flank, vilket sätter en övre gräns för hur långt
+två noder kan hinna driva isär innan de dras tillbaka.
+
+\begin{aside}
+De två mekanismerna är alltså inte oberoende: bitstoppningen finns \emph{för} resynkroniseringens
+skull. Ett protokoll utan stoppning skulle behöva antingen en klockledning eller betydligt
+noggrannare oscillatorer.
+\end{aside}
+
+\section{Att räkna ut tajmingen}
+
+För en konstruktion räknas två tal ut ur systemklockan och den önskade bithastigheten:
+
+\[ \text{tick per bit} = \frac{f_{\text{system}}}{\text{bithastighet}} \]
+
+Med en systemklocka på 50~MHz och 1~Mbit/s blir det 50 klockcykler per CAN-bit. Sampelpunkten vid
+70~\% blir då tick 35.
+
+\begin{cppcode}
+// Derived, never written down as a literal: change the bit rate and both follow.
+constexpr unsigned TicksPerBit{SystemClockHz / BitRateHz};
+constexpr unsigned SampleTick{TicksPerBit * 7U / 10U};
+\end{cppcode}
+
+Att de \emph{räknas ut} och inte skrivs in är poängen. En konstruktion där \code{50} och
+\code{35} står inskrivna på var sitt ställe är en konstruktion där den ena hinner ändras utan
+den andra.
+
+\section{Vad som händer när det går fel}
+
+Två fel är värda att känna igen, eftersom de ser olika ut:
+
+\textbf{Fel bithastighet.} Noderna är ur fas från första biten. Symptomet är att ingenting alls
+fungerar --- inga frames tas emot, och den sändande noden rapporterar fel direkt. Det är det
+snällare felet, för det syns omedelbart.
+
+\textbf{Fel sampelpunkt.} Noderna kommer överens om de flesta bitar men inte alla. Symptomet är
+sporadiska CRC- och stoppfel som blir värre med längre kabel och högre belastning. Det här är
+det obehagliga felet, för det ser ut som en dålig kabel.
+
+\section*{Övningar}
+
+\exercise{Räkna tajmingen}{Räkning}
+\label{ex:5:1}
+En konstruktion har systemklockan 50~MHz.
+\begin{enumerate}[a)]
+  \item Hur många klockcykler går det på en CAN-bit vid 1~Mbit/s?
+  \item Vid 500~kbit/s?
+  \item Var ligger sampelpunkten i klockcykler räknat, vid 1~Mbit/s och 70~\%?
+\end{enumerate}
+
+\exercise{Sampelpunkten}{Resonemang}
+\label{ex:5:2}
+\begin{enumerate}[a)]
+  \item Varför ligger sampelpunkten sent i bitperioden i stället för i mitten?
+  \item Vad skulle gå fel under arbitreringen om den låg vid 20~\%?
+  \item Vilken del av bitperioden skulle behöva växa om kabeln blev dubbelt så lång?
+\end{enumerate}
+
+\exercise{Stoppning och synk}{Resonemang}
+\label{ex:5:3}
+\begin{enumerate}[a)]
+  \item Hur många bitperioder kan som mest passera utan en flank i en CAN-frame?
+  \item Vilken mekanism garanterar det?
+  \item Vad skulle hända med resynkroniseringen om bitstoppningen togs bort?
+\end{enumerate}
+
+\exercise{Två symptom}{Resonemang}
+\label{ex:5:4}
+Två noder ska prata med varandra.
+\begin{enumerate}[a)]
+  \item Nod A är inställd på 500~kbit/s och nod B på 1~Mbit/s. Vad ser ni?
+  \item Båda kör 1~Mbit/s, men A samplar vid 50~\% och B vid 80~\%. Vad ser ni, och varför är
+    det svårare att felsöka?
+\end{enumerate}

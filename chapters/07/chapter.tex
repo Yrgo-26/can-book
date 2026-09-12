@@ -1,0 +1,211 @@
+\chapter{Den förenklade kontrollern}
+\label{ch:kursen}
+
+{\large\itshape Vad en undervisningskontroller implementerar, och vad den medvetet låter bli.\par}
+
+\begin{chapterbox}{I det här kapitlet}
+\begin{itemize}
+  \item Blocken en förenklad CAN-kontroller består av.
+  \item Vilka delar av \kapref{ch:buss}--\kapref{ch:fel} som finns med, och vilka som inte gör det.
+  \item Varför en pollande mjukvara inte kan prata direkt med kontrollern.
+  \item Registerlagret som gör den nåbar, och de tre begränsningar som når ända upp i koden.
+\end{itemize}
+\end{chapterbox}
+
+De sex föregående kapitlen beskriver CAN som standarden definierar det. Det här kapitlet
+beskriver den kontroller som faktiskt byggs i undervisningen: vad den gör av allt det, och vad
+den låter bli.
+
+Kapitlet vänder sig åt båda hållen. Bygger man kontrollern är listan nedan kravspecifikationen.
+Skriver man drivrutinen är den i stället listan över vad man inte får räkna med.
+
+\section{Blocken}
+
+\bookfigure{controller_blocks}{Den förenklade kontrollerns block, och lagret som gör den nåbar
+från en processor.}{fig:blocks}
+
+\begin{booktable}{@{}lL@{}}
+\thead{Block} & \thead{Ansvar} \\ \midrule
+Bittimer & Räknar tick per bit, pulsar vid sampelpunkten och vid bitperiodens slut
+  (\kapref{ch:tajming}). \\
+CRC-15 & En bitseriell motor som både beräknar och kontrollerar (\kapref{ch:stuffing}). \\
+Sändningsskiftregister & Serialiserar MSB först och sätter in stoppbitar. \\
+Mottagningsskiftregister & Deserialiserar och plockar bort stoppbitar; rapporterar stoppfel. \\
+Kontroller & Tillståndsmaskinen som sekvenserar framens fält och sköter arbitreringen. \\
+Synkroniserare & Två vippor på varje asynkron ingång, så att bussen och reset kan läsas säkert. \\
+\end{booktable}
+
+Ovanpå dem ligger två block till, som inte har med CAN att göra utan med att göra kontrollern
+\emph{nåbar}:
+
+\begin{booktable}{@{}lL@{}}
+\thead{Block} & \thead{Ansvar} \\ \midrule
+Registerbank & Översätter kontrollerns encykelspulser till klibbiga, pollbara register. \\
+Serie\-brygga & Gör registren läs- och skrivbara utifrån, över en seriebuss. \\
+\end{booktable}
+
+\section{Vad som finns med}
+
+Kontrollern implementerar framens sekvens i sin helhet: SOF, arbitreringsfältet med identifierare
+och RTR, kontrollfältet med IDE, r0 och DLC, datafältet, CRC-15 med avgränsare, ACK-lucka med
+avgränsare, och sju bitars EOF.
+
+Den implementerar också:
+
+\begin{itemize}
+  \item \textbf{Bitstoppning åt båda hållen}, med stoppningstillståndet levande över fältgränser.
+  \item \textbf{CRC-15}, med samma motor på sändar- och mottagarsidan.
+  \item \textbf{Arbitrering}, bit för bit över arbitreringsfältet.
+  \item \textbf{Öppen dränering}: noden driver bara när den ska, och bussen är dominant om någon
+    drar ned den.
+  \item \textbf{Stoppfelsdetektering} och \textbf{CRC-kontroll} på mottagarsidan.
+\end{itemize}
+
+Det är tillräckligt för att två sådana noder ska utbyta riktiga CAN-frames på en riktig buss, och
+tillräckligt för att en kommersiell bussanalysator ska kunna avkoda dem.
+
+\section{Vad som inte finns med}
+
+\begin{booktable}{@{}lL@{}}
+\thead{Saknas} & \thead{Konsekvens} \\ \midrule
+Felframes & Ett fel avbryter inte överföringen för de andra noderna. \\
+Felräknare & Inget error passive, inget bus off (\kapref{ch:fel}). \\
+Automatisk omsändning & En frame som gick fel skickas inte om av hårdvaran. \\
+ACK-återläsning & Sändaren får aldrig veta om någon kvitterade. \\
+Mottagning under sändning & En nod som förlorar arbitreringen tar inte emot framen som vann. \\
+Mottagningskö & Kontrollern håller exakt en mottagen frame. \\
+Filtrering & Varje mottagen frame lämnas vidare; filtreringen ligger i mjukvaran. \\
+Utökade identifierare & Bara 11 bitar. \\
+Bitfelsdetektering utanför arbitreringen & Sändaren läser bara tillbaka bussen under arbitreringsfältet. \\
+\end{booktable}
+
+Var och en av dem är ett medvetet val. Tillsammans är de skillnaden mellan en konstruktion som
+går att bygga och verifiera under en kurs, och en som inte gör det.
+
+\section{Varför ett registerlager behövs}
+
+Kontrollern är byggd för en anropare i samma klockdomän. Den signalerar med pulser som är
+\textbf{en klockcykel} långa --- 20~ns vid 50~MHz.
+
+En processor som pollar över en seriebuss ser systemet några tiotals mikrosekunder i taget i
+bästa fall. En puls på 20~ns är alltså borta tusentals cykler innan nästa pollning kommer.
+
+\textbf{Registerbanken löser det genom att göra om pulser till nivåer.} En puls sätter en bit,
+och biten står kvar tills mjukvaran uttryckligen nollställer den:
+
+\begin{booktable}{@{}lll@{}}
+\thead{Statusbit} & \thead{Sätts av} & \thead{Nollställs av} \\ \midrule
+TX klar & en avslutad sändning & en accepterad sändningstrigger \\
+RX giltig & en mottagen frame & en kvittering från mjukvaran \\
+Fel & en stigande flank på felnivån & en uttrycklig nollställning \\
+\end{booktable}
+
+Det mönstret --- \emph{klibbig bit, uttrycklig nollställning} --- är hela poängen med lagret, och det
+är också den vanligaste källan till buggar i mjukvaran ovanför. Glöms nollställningen står biten
+kvar för alltid, och drivrutinen läser samma frame i en oändlig loop.
+
+\begin{aside}
+\note Registerbanken \emph{döljer} inte kontrollerns begränsningar, den \emph{vidarebefordrar} dem.
+Det är ett designval värt att lägga märke till: ett lager som hade buffrat mottagna frames hade
+sett hjälpsamt ut och gjort systemets verkliga beteende omöjligt att resonera om.
+\end{aside}
+
+\section{De tre begränsningarna som når ända upp}
+
+Tre av förenklingarna ovan är inte bara interna. De syns i mjukvaran, och den som skriver
+drivrutinen måste hantera dem snarare än att bli förvånad av dem.
+
+\subsection{En förlorad arbitrering ser ut som en lyckad sändning}
+
+Kontrollern signalerar "sändningen är över" i båda fallen. Biten betyder \textbf{porten är fri
+igen}, inte \emph{framen kom fram}.
+
+Att den gör så är avsiktligt, och det är faktiskt en rättelse av en verklig bugg: signalerade den
+bara vid lyckad sändning, skulle biten bli liggande efter varje förlorad arbitrering, och noden
+kunde inte sända igen förrän den nollställdes för hand. På en tvånodsbuss alltså i normal drift.
+
+Konsekvensen för mjukvaran är en pollningsloop i två steg:
+
+\begin{console}
+vänta på "porten är fri"   -> sändningsförsöket är över
+läs felflaggan             -> gick det bra eller inte?
+\end{console}
+
+Utan det andra steget går det inte att veta om framen ska skickas om.
+
+\subsection{En bit för fyra orsaker}
+
+Förlorad arbitrering, stoppfel, misslyckad CRC och mottagen fjärrframe ger alla samma enda
+felflagga. Mjukvaran kan se \emph{att} något gick fel, aldrig \emph{vad}.
+
+Retry-logik som behandlar en förlorad arbitrering annorlunda än en trasig CRC går alltså inte att
+skriva mot det här gränssnittet. Rätt hantering är att veta om begränsningen och behandla alla
+fyra lika --- inte att gissa orsaken ur sammanhanget.
+
+\subsection{Ingen buffring på mottagarsidan}
+
+Kontrollern håller en frame. Kommer nästa innan den förra kvitterats skrivs den över, och den
+nyaste vinner.
+
+Det är dokumenterat och avsiktligt. En riktig kontroller har en mottagningskö; den här har det
+inte, och mjukvaran får polla tillräckligt ofta. Vid någon trafikintensitet räcker det inte
+oavsett hur ofta den pollar, och då tappas frames --- vilket är hårdvarans begränsning och inte
+mjukvarans bugg.
+
+\section{Vad en riktig kontroller skulle lägga till}
+
+För fullständighetens skull, och som svar på frågan "hur långt är det kvar?":
+
+\begin{itemize}
+  \item Felframes, felräknare och bus off (\kapref{ch:fel}).
+  \item Automatisk omsändning efter fel.
+  \item Mottagningsfilter i hårdvara, så att ointressanta frames aldrig når mjukvaran.
+  \item En mottagningskö med flera platser.
+  \item Flera sändningsbuffertar med inbördes prioritet.
+  \item Utökade identifierare, och därmed CAN 2.0B.
+  \item Återläsning av hela framen, och därmed riktig bitfelsdetektering.
+\end{itemize}
+
+Listan är lång, men lägg märke till vad som \emph{inte} står på den: ramning, stoppning, CRC,
+arbitrering och bittajming. Det svåra i CAN är redan gjort.
+
+\section*{Övningar}
+
+\exercise{Vad saknas}{Resonemang}
+\label{ex:7:1}
+För vart och ett av följande scenarier: vad gör en fullständig CAN-kontroller, och vad gör den
+förenklade?
+\begin{enumerate}[a)]
+  \item En frame förlorar arbitreringen.
+  \item En mottagen frame har fel checksumma.
+  \item Ingen nod kvitterar en sänd frame.
+  \item Två frames tas emot tätt efter varandra.
+\end{enumerate}
+
+\exercise{Klibbiga bitar}{Resonemang}
+\label{ex:7:2}
+Kontrollern pulsar i en klockcykel; mjukvaran pollar var fyrtionde mikrosekund.
+\begin{enumerate}[a)]
+  \item Hur många klockcykler på 50~MHz går det mellan två pollningar?
+  \item Vad skulle mjukvaran se om statusbiten speglade pulsen direkt?
+  \item Varför måste biten nollställas av en skrivning i stället för automatiskt vid läsning?
+\end{enumerate}
+
+\exercise{Två steg}{Resonemang}
+\label{ex:7:3}
+En drivrutin väntar på att sändningen ska bli klar och returnerar sedan "det gick bra".
+\begin{enumerate}[a)]
+  \item Vilket fel gör den?
+  \item Vad måste den göra i stället?
+  \item Vilka fyra orsaker kan ligga bakom en satt felflagga?
+\end{enumerate}
+
+\exercise{Gränsen}{Resonemang}
+\label{ex:7:4}
+Registerbanken vidarebefordrar kontrollerns begränsningar i stället för att dölja dem.
+\begin{enumerate}[a)]
+  \item Ge ett exempel på hur den \emph{skulle} kunna dölja en av dem.
+  \item Vad hade det kostat den som felsöker systemet?
+  \item Vilken princip säger detta något om, mer allmänt, när man konstruerar ett gränssnitt
+    mellan hårdvara och mjukvara?
+\end{enumerate}

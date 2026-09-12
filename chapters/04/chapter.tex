@@ -1,0 +1,175 @@
+\chapter{Arbitrering}
+\label{ch:arbitrering}
+
+{\large\itshape Hur en buss utan mästare avgör vem som får sända.\par}
+
+\begin{chapterbox}{I det här kapitlet}
+\begin{itemize}
+  \item Multimaster: ingen nod fördelar bussen, och ingen behöver göra det.
+  \item Arbitreringen bit för bit, arbetad för hand med två och tre noder.
+  \item Varför den kallas icke-förstörande, och vad det sparar.
+  \item Prioritetsinversion, svält, och hur ett verkligt system undviker dem.
+\end{itemize}
+\end{chapterbox}
+
+\section{Ingen mästare}
+
+De flesta bussar löser åtkomsten med en mästare. En nod bestämmer vem som får prata, och de andra
+väntar på tur. Det fungerar, och det kostar en nod som alla är beroende av.
+
+CAN har ingen sådan. Varje nod får börja sända så fort bussen varit ledig i tre bitar
+(intermission). Börjar två noder samtidigt löser bussen själv upp det, medan det händer, utan
+att någon förlorar tid.
+
+Mekanismen är den asymmetri \kapref{ch:buss} lade fram, använd på ett enda ställe: under
+arbitreringsfältet jämför varje sändande nod, bit för bit, det den sänder med det som faktiskt
+ligger på bussen.
+
+\begin{aside}
+\textbf{Regeln, i sin helhet:} sänder en nod \rec{} och läser tillbaka \dom{}, har den förlorat.
+Den slutar sända omedelbart och blir mottagare.
+\end{aside}
+
+Sänder den dominant och läser dominant är allt som det ska --- antingen är den ensam, eller så
+sänder någon annan samma bit. Sänder den recessivt och läser recessivt likaså.
+
+Den enda kombinationen som säger något är alltså recessiv ut, dominant in: någon annan sänder,
+och den andra har en nolla där vi har en etta. Eftersom identifieraren sänds MSB först betyder
+det att den andras identifierare är numeriskt \emph{lägre}, och därmed har högre prioritet.
+
+\section{Två noder, bit för bit}
+
+Nod A vill sända identifieraren \code{0x2A7}, nod B \code{0x2A3}. Båda börjar samtidigt.
+
+Binärt, elva bitar, MSB först:
+
+\begin{console}
+bit:        1 2 3 4 5 6 7 8 9 10 11
+A (0x2A7):  0 1 0 1 0 1 0 0 1  1  1
+B (0x2A3):  0 1 0 1 0 1 0 0 0  1  1
+                            ^ här skiljer de sig
+\end{console}
+
+\begin{booktable}{@{}lllll@{}}
+\thead{Bit} & \thead{A sänder} & \thead{B sänder} & \thead{Bussen} & \thead{Händelse} \\ \midrule
+1--8 & samma & samma & samma & Ingen märker något \\
+9 & \rec{} (1) & \dom{} (0) & \dom{} & A läser tillbaka dominant: \textbf{A förlorar} \\
+10--11 & --- & sänder vidare & B:s bitar & B fortsätter ostört \\
+\end{booktable}
+
+Notera vad som \emph{inte} händer: ingen kollision, ingen förlorad tid, ingen omstart. B:s frame
+fortsätter från bit 9 som om A aldrig hade funnits. A:s frame sändes aldrig --- den bara slutade,
+mitt i, och A väntar ut B:s frame för att försöka igen efteråt.
+
+Därför heter det \textbf{icke-förstörande arbitrering}: konflikten löses utan att någons data
+förstörs.
+
+\bookfigure{arbitration}{Arbitrering mellan två noder. A drar sig ur och blir
+mottagare vid bit 9; B:s frame löper vidare oavbrutet.}{fig:arbitration}
+
+\section{Tre noder}
+
+Med fler noder är det samma regel, tillämpad samtidigt av alla. Tre noder med identifierarna
+\code{0x100}, \code{0x0FF} och \code{0x2A7}:
+
+\begin{console}
+bit:        1 2 3 4 5 6 7 8 9 10 11
+A (0x100):  0 0 1 0 0 0 0 0 0  0  0
+B (0x0FF):  0 0 0 1 1 1 1 1 1  1  1
+C (0x2A7):  0 1 0 1 0 1 0 0 1  1  1
+              ^ ^
+              | bit 3: A sänder recessivt, B dominant -> A faller bort
+              bit 2: C sänder recessivt, A och B dominant -> C faller bort
+\end{console}
+
+Vid bit 1 sänder alla tre dominant, så ingen märker något. Vid bit 2 faller C bort, vid bit 3
+faller A bort. B vinner, och har lägst identifierare --- vilket alltid är utfallet, eftersom
+"lägst numeriskt" och "först dominant bit" är samma sak när bitarna sänds MSB först.
+
+\section{Vad förloraren gör}
+
+Den förlorande noden blir mottagare för resten av framen. Det är inte bara artighet: den
+\emph{ska} ta emot den vinnande framen, eftersom den mycket väl kan vara adresserad till den.
+
+När bussen blivit ledig igen försöker den om. Och eftersom dess identifierare är oförändrad
+kommer den att förlora igen om samma högprioriterade nod sänder igen --- vilket leder till nästa
+avsnitt.
+
+\begin{simplification}
+\note[Förenkling] Den förenklade kontrollern i \kapref{ch:kursen} tar \emph{inte} emot framen den
+förlorade mot. Den lämnar sändarrollen, sätter sin felflagga och går tillbaka till vila. Det är
+en medveten förenkling, och den är synlig för mjukvaran: en nod som förlorat en arbitrering
+missar den frame som vann.
+\end{simplification}
+
+\section{Svält och prioritetsinversion}
+
+Arbitreringen är rättvis mot prioriteten, inte mot noderna. En nod med hög identifierare på en
+hårt belastad buss kan i princip aldrig komma fram --- den förlorar varje gång.
+
+Det är ett känt och accepterat beteende, och det hanteras i systemdesignen snarare än i
+protokollet:
+
+\begin{itemize}
+  \item \textbf{Bussbelastningen hålls nere.} Tumregeln i fordonssystem är att inte planera för
+    mer än omkring 30--50~\% belastning, just för att lämna utrymme åt lågprioriterade frames.
+  \item \textbf{Identifierarna planeras.} Prioritetsordningen sätts av vad som är tidskritiskt,
+    inte av vad som råkade få vilket nummer.
+  \item \textbf{Sändningar periodiseras.} En nod som sänder så ofta den kan är en nod som svälter
+    ut alla under sig.
+\end{itemize}
+
+\begin{aside}
+\note En frame som förlorat arbitreringen försenas, men blir inte fel. Det är därför CAN kallas
+\emph{deterministiskt} för den högst prioriterade framen: dess värstafallsfördröjning går att
+räkna ut. För övriga frames går det också, men svaret blir större ju längre ned i ordningen de
+ligger.
+\end{aside}
+
+\section{Vad sändaren inte får veta}
+
+En nod som förlorat arbitreringen vet att den förlorade. En nod som vann vet bara att den kom
+igenom.
+
+Framför allt: \textbf{sändaren får aldrig veta om någon förlorade mot den.} Det finns ingen
+räknare, ingen rapport, ingen skillnad i framen. Det spelar ingen roll för CAN, men det spelar
+roll för den som felsöker ett system där en nod aldrig verkar komma fram --- symptomet syns bara
+hos förloraren.
+
+\section*{Övningar}
+
+\exercise{Två noder}{Räkning}
+\label{ex:4:1}
+Nod A sänder identifieraren \code{0x155}, nod B sänder \code{0x154}. Båda börjar samtidigt.
+\begin{enumerate}[a)]
+  \item Skriv upp båda identifierarna binärt, elva bitar, MSB först.
+  \item Vid vilken bit skiljer de sig?
+  \item Vem vinner, och vad gör förloraren?
+\end{enumerate}
+
+\exercise{Tre noder}{Räkning}
+\label{ex:4:2}
+Tre noder börjar sända samtidigt, med identifierarna \code{0x400}, \code{0x200} och \code{0x201}.
+\begin{enumerate}[a)]
+  \item Vid vilken bit faller den första noden bort?
+  \item Vid vilken bit avgörs det mellan de två återstående?
+  \item Vem vinner?
+\end{enumerate}
+
+\exercise{Samma identifierare}{Resonemang}
+\label{ex:4:3}
+Två noder sänder av misstag samma identifierare samtidigt, men med olika data.
+\begin{enumerate}[a)]
+  \item Vad händer under arbitreringsfältet?
+  \item Vad händer när datafälten börjar skilja sig åt?
+  \item Varför är det här ett konstruktionsfel snarare än ett driftfel?
+\end{enumerate}
+
+\exercise{Svält}{Resonemang}
+\label{ex:4:4}
+En nod med identifieraren \code{0x7FF} kommer aldrig fram på en hårt belastad buss.
+\begin{enumerate}[a)]
+  \item Varför inte?
+  \item Är det ett fel i protokollet? Motivera.
+  \item Ge två åtgärder på systemnivå som skulle hjälpa.
+\end{enumerate}

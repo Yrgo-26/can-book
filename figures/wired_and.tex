@@ -1,0 +1,27 @@
+% Bussen som wired-AND: en dominant nod räcker.
+\begin{tikzpicture}[
+  nod/.style={draw=rule, fill=white, rounded corners=2pt, inner sep=4pt,
+              font=\scriptsize, minimum width=21mm, minimum height=6.5mm, align=center}]
+
+  % Bussledningen.
+  \draw[line width=1.1pt, ink] (-0.55,0) -- (6.55,0);
+  \node[font=\scriptsize\bfseries, ink, anchor=west] at (6.7,0) {buss};
+
+  % Uppdragsmotstånd: bussen vilar recessivt.
+  \draw[line width=0.5pt, recessive] (-0.55,0) -- (-0.55,0.85);
+  \node[font=\tiny, recessive, anchor=south, align=center] at (-0.55,0.88)
+    {uppdrag\\[-0.3ex] till \rec};
+
+  % Tre noder.
+  \foreach \x/\txt/\col in {%
+    0.8/{driver \rec}/recessive,
+    3.0/{driver \dom}/dominant,
+    5.2/{driver inte}/muted} {
+    \node[nod] (N\x) at (\x,-1.35) {\txt};
+    \draw[line width=0.6pt, \col] (\x,-1.02) -- (\x,0);
+    \fill[\col] (\x,0) circle (1.2pt);
+  }
+
+  % Resultatet.
+  \node[font=\small, anchor=south] at (3.0,0.28) {bussen blir \dom};
+\end{tikzpicture}

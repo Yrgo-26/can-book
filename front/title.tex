@@ -1,0 +1,62 @@
+% Smutstitel, titelsida och kolofon.
+\providecommand{\bookversion}{}
+\newcommand{\bookdate}{\number\day\space\ifcase\month\or januari\or februari\or mars\or april\or
+  maj\or juni\or juli\or augusti\or september\or oktober\or november\or december\fi\space
+  \number\year}
+\newcommand{\bookedition}{\ifx\bookversion\empty\else\bookversion\,·\,\fi\bookdate}
+
+\thispagestyle{empty}
+\vspace*{2.2in}
+\begin{flushright}
+  {\Large\bfseries CAN}
+\end{flushright}
+\cleardoublepage
+
+\thispagestyle{empty}
+\vspace*{1.1in}
+\begin{flushleft}
+  {\color{accent}\rule{0.9in}{2.5pt}}\par\vspace{1.4ex}
+  {\fontsize{32}{38}\selectfont\bfseries CAN\par}
+  \vspace{2.2ex}
+  {\Large\itshape Bussen, framen och kontrollern\par}
+  \vspace{1.2in}
+  {\large Erik Pihl\par}
+  \vfill
+  \vspace{0.6ex}
+  {\small\color{muted} \bookedition\par}
+\end{flushleft}
+\newpage
+
+\thispagestyle{empty}
+\vspace*{\fill}
+{\small
+\noindent\textit{CAN - bussen, framen och kontrollern}\\
+En kort bok om CAN, skriven för den som ska bygga en CAN-nod: antingen kontrollern i hårdvara
+eller drivrutinen i mjukvara.
+
+\medskip
+\noindent Boken beskriver CAN som protokoll: bussen, framen, bitstoppningen, checksumman,
+arbitreringen och bittajmingen. Sista kapitlet beskriver den förenklade kontroller som byggs och
+drivs i undervisningen, vad den implementerar av allt det föregående, och vad den medvetet låter
+bli.
+
+\medskip
+\noindent Brödtexten är på svenska. All kod, alla registernamn och alla signalnamn är på
+engelska, precis som i koden och i de gemensamma specifikationerna.
+
+\medskip
+\noindent Text och figurer: Erik Pihl.
+
+\medskip
+\noindent Bokens text och figurer, liksom kursmaterialet den är satt från, är licensierade under
+Creative Commons Erkännande 4.0 Internationell (CC BY 4.0). Du får kopiera, sprida och bearbeta
+materialet i vilket syfte som helst, även kommersiellt, förutsatt att du anger upphovsperson och
+licens. Licensen finns på \url{https://creativecommons.org/licenses/by/4.0/deed.sv}.
+
+\medskip
+\noindent Satt med Lua\LaTeX\ i TeX Gyre Pagella och DejaVu Sans Mono.
+
+\medskip
+\noindent\textcolor{muted}{Den här utgåvan: \bookedition.}
+\par}
+\cleardoublepage

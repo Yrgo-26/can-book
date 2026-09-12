@@ -1,0 +1,36 @@
+% Den förenklade kontrollerns block plus lagret som gör den nåbar.
+\begin{tikzpicture}[
+  every node/.style={font=\scriptsize},
+  blk/.style={draw=rule, rounded corners=2pt, minimum width=2.6cm, minimum height=0.72cm,
+              align=center, font=\scriptsize, fill=white},
+  grp/.style={draw=rule, dashed, rounded corners=3pt, inner sep=6pt},
+  arr/.style={-{Stealth[length=1.8mm]}, muted, line width=0.5pt}]
+
+  % Mjukvarusidan.
+  \node[blk, fill=fillaccent2!45] (sw) at (0,3.4) {mjukvara på en processor};
+
+  % Nåbarhetslagret.
+  \node[blk, fill=fillaccent!45] (bridge) at (0,2.3) {seriebrygga};
+  \node[blk, fill=fillaccent!45] (bank)   at (0,1.4) {registerbank};
+
+  % CAN-sidan.
+  \node[blk, fill=fillaccent3!50] (ctrl)  at (0,0.3) {kontroller\\\tiny tillståndsmaskin + arbitrering};
+  \node[blk, minimum width=1.7cm] (timer) at (-2.1,-1.0) {bittimer};
+  \node[blk, minimum width=1.7cm] (crc)   at (-0.1,-1.0) {CRC-15};
+  \node[blk, minimum width=1.7cm] (shift) at (2.0,-1.0)  {skiftregister};
+
+  \node[blk, fill=fillmuted] (bus) at (0,-2.2) {CAN-bussen};
+
+  \draw[arr] (sw) -- (bridge);
+  \draw[arr] (bridge) -- (bank);
+  \draw[arr] (bank) -- (ctrl);
+  \draw[arr] (ctrl) -- (timer);
+  \draw[arr] (ctrl) -- (crc);
+  \draw[arr] (ctrl) -- (shift);
+  % Bussen drivs och läses av kontrollern, inte av lövblocken: routa runt dem.
+  \draw[arr] (ctrl.east) -- ++(1.15,0) |- (bus.east);
+
+  % Etiketter i marginalen.
+  \node[anchor=west, muted, font=\scriptsize\itshape] at (2.9,1.85) {gör kontrollern nåbar};
+  \node[anchor=west, muted, font=\scriptsize\itshape] at (2.9,-1.0) {känner till CAN};
+\end{tikzpicture}

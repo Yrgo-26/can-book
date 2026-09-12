@@ -1,0 +1,32 @@
+% Punkt-till-punkt mot delad buss.
+\begin{tikzpicture}[
+  node distance=0pt,
+  nod/.style={draw=rule, fill=fillmuted, rounded corners=1.5pt, inner sep=3pt,
+              font=\scriptsize, minimum width=7mm, minimum height=5mm}]
+
+  % ---- Vänster: punkt-till-punkt, fem noder i en ring, alla par ihopkopplade. ----
+  \begin{scope}[shift={(0,0)}]
+    \foreach \i in {0,...,4} {
+      \node[nod] (L\i) at ({90 + \i*72}:1.25) {\i};
+    }
+    \foreach \i in {0,...,4} {
+      \foreach \j in {0,...,4} {
+        \ifnum\i<\j
+          \draw[accent!55, line width=0.4pt] (L\i) -- (L\j);
+        \fi
+      }
+    }
+    \node[font=\scriptsize\itshape, muted] at (0,-1.95) {tio förbindelser};
+  \end{scope}
+
+  % ---- Höger: delad buss. ----
+  \begin{scope}[shift={(5.4,0)}]
+    \draw[accent2, line width=1.1pt] (-1.7,-0.5) -- (1.7,-0.5);
+    \foreach \i/\x in {0/-1.36, 1/-0.68, 2/0, 3/0.68, 4/1.36} {
+      \node[nod] (B\i) at (\x,0.75) {\i};
+      \draw[accent2!70, line width=0.5pt] (B\i) -- (\x,-0.5);
+      \fill[accent2] (\x,-0.5) circle (0.9pt);
+    }
+    \node[font=\scriptsize\itshape, muted] at (0,-1.95) {en buss};
+  \end{scope}
+\end{tikzpicture}

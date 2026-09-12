@@ -1,0 +1,198 @@
+\chapter{Bitstoppning och CRC-15}
+\label{ch:stuffing}
+
+{\large\itshape De två mekanismerna som gör att en frame överlever en störig buss.\par}
+
+\begin{chapterbox}{I det här kapitlet}
+\begin{itemize}
+  \item Varför en lång rad lika bitar är ett problem, och femregeln som löser det.
+  \item Vilka fält som stoppas, och vilka som inte gör det.
+  \item CRC-15: polynomet, den bitseriella motorn, och ett exempel räknat för hand.
+  \item Varför samma motor både beräknar och kontrollerar.
+\end{itemize}
+\end{chapterbox}
+
+\section{Problemet med lika bitar}
+
+CAN-noder har ingen gemensam klocka. Varje nod har sin egen oscillator, och de går aldrig exakt
+lika fort. En mottagare håller takten genom att titta på \emph{flankerna} i bitströmmen: varje
+gång signalen byter nivå vet den var en bitgräns låg, och kan justera sin egen räknare
+(\kapref{ch:tajming}).
+
+Kommer det inga flanker driver mottagaren i väg. Efter tillräckligt många lika bitar i rad
+samplar den fel bit, och framen är förlorad.
+
+\textbf{Lösningen är att göra flankerna obligatoriska.} Efter fem lika bitar i rad sätter
+sändaren in en \textbf{stoppbit} med motsatt värde, som mottagaren känner igen och kastar.
+
+\section{Femregeln}
+
+Regeln är kort: \textbf{efter fem lika bitar i rad sänds en bit med motsatt värde}, oavsett vad
+som kommer härnäst.
+
+Ett exempel, med den insatta biten markerad:
+
+\begin{console}
+in:  1 1 1 1 1 0 0 0 0 0 1
+ut:  1 1 1 1 1 0 0 0 0 0 1 0 1
+               ^           ^
+           stoppbit    stoppbit
+\end{console}
+
+Det finns två detaljer här som är lätta att få fel, och båda är klassiska buggar:
+
+\textbf{Stoppbiten räknas själv.} Efter att en stoppbit satts in börjar räkningen om med
+stoppbiten som första bit i den nya serien. Den är en helt vanlig bit i strömmen, för alla
+utom den som ska plocka bort den igen.
+
+\textbf{Regeln gäller strömmen, inte fältet.} Fem lika bitar som sträcker sig över gränsen
+mellan identifieraren och DLC:n utlöser en stoppbit precis som fem inom ett fält. En
+implementation som nollställer räknaren vid varje fältbyte fungerar nästan alltid, och går
+sönder precis när två fält råkar sluta och börja med samma bitvärde.
+
+\subsection{Vilka fält som stoppas}
+
+Stoppning gäller från SOF till och med CRC-fältet. Därefter \textbf{slutar} den:
+
+\begin{narrowtable}{@{}ll@{}}
+\thead{Fält} & \thead{Stoppas?} \\ \midrule
+SOF, arbitrering, kontroll, data, CRC & Ja \\
+CRC-avgränsare, ACK, EOF, intermission & Nej \\
+\end{narrowtable}
+
+Att slutet inte stoppas är vad som gör EOF användbart som slutmärke. Sju recessiva bitar i rad
+kan inte förekomma i den stoppade delen --- där är fem lika det mesta som får passera --- så en
+mottagare som ser sju recessiva vet säkert att framen är slut.
+
+\subsection{Stoppfel}
+
+Mottagaren räknar likadant som sändaren. Efter fem lika bitar \emph{måste} nästa bit vara den
+motsatta. Är den inte det är något fel, och mottagaren rapporterar ett \textbf{stoppfel}.
+
+Det är ett av CAN:s billigaste feldetekteringsmedel: det kostar ingen extra information alls,
+bara en räknare i vardera änden.
+
+\begin{aside}
+\note[Kostnaden] Stoppningen gör framen längre, och hur mycket beror på datan. En frame vars
+databitar växlar hela tiden får inga stoppbitar alls; en frame full av nollor får en var femte
+bit. För den längsta dataframen är påslaget som mest ett tjugotal bitar. Det är också därför en
+CAN-frames längd inte är exakt förutsägbar från DLC:n --- vilket i sin tur är därför den som
+räknar på bussbelastning räknar med värstafallet.
+\end{aside}
+
+\section{CRC-15}
+
+Checksumman är femton bitar, beräknad över allt från SOF till och med datafältet --- alltså de
+\emph{verkliga} bitarna, utan stoppbitar. Stoppbitar är transportens sak och ingår inte i det
+som skyddas.
+
+\subsection{Polynomet}
+
+CAN använder
+
+\[ x^{15} + x^{14} + x^{10} + x^{8} + x^{7} + x^{4} + x^{3} + 1 \]
+
+som i binär form, koefficienterna för $x^{14}$ ned till $x^{0}$, blir
+
+\begin{console}
+100010110011001
+\end{console}
+
+Polynomet är valt för att upptäcka alla enkel-, dubbel- och trippelfel, alla felburstar upp till
+15 bitar, och de allra flesta längre. Det är inte en slumpmässig konstant.
+
+\subsection{Motorn}
+
+Beräkningen är ett femtonbitars skiftregister med återkoppling, och den tar en bit i taget:
+
+\begin{cppcode}
+// One bit into the CRC-15 engine. crc is 15 bits wide.
+const bool feedback{static_cast<bool>((crc >> 14U) & 1U) ^ bit};
+crc = static_cast<std::uint16_t>((crc << 1U) & 0x7FFFU);
+if (feedback)
+{
+    crc ^= 0x4599U;   // 100010110011001
+}
+\end{cppcode}
+
+Tre rader: XOR:a den inkommande biten med registrets översta bit, skifta registret ett steg, och
+XOR:a in polynomet om resultatet av den första operationen var ett.
+
+\subsection{Ett exempel för hand}
+
+Sekvensen \code{10110010}, matad in bit för bit i ett nollställt register:
+
+\begin{narrowtable}{@{}llll@{}}
+\thead{Bit} & \thead{Värde} & \thead{Registret efter} & \thead{Hex} \\ \midrule
+1 & 1 & \code{100010110011001} & \code{0x4599} \\
+2 & 0 & \code{100111010101011} & \code{0x4EAB} \\
+3 & 1 & \code{001110101010110} & \code{0x1D56} \\
+4 & 1 & \code{111111100110101} & \code{0x7F35} \\
+5 & 0 & \code{011101111110011} & \code{0x3BF3} \\
+6 & 0 & \code{111011111100110} & \code{0x77E6} \\
+7 & 1 & \code{110111111001100} & \code{0x6FCC} \\
+8 & 0 & \code{001101000000001} & \code{0x1A01} \\
+\end{narrowtable}
+
+Checksumman är alltså \code{0x1A01}.
+
+\subsection{Samma motor kontrollerar}
+
+Här ligger elegansen. Mottagaren har ingen separat kontrollfunktion: den matar in \emph{samma}
+bitar plus \emph{den mottagna checksumman} genom samma motor.
+
+Om allt stämmer står registret på \textbf{noll} när sista CRC-biten passerat. Matar vi in
+\code{10110010} följt av \code{001101000000001} ur exemplet ovan blir slutvärdet
+\code{0x0000}.
+
+Det är en egenskap hos konstruktionen, inte ett specialfall: att lägga resten sist i dividenden
+gör den jämnt delbar. Sändare och mottagare kan därför använda exakt samma modul, utan
+lägesomkoppling --- vilket är precis vad en hårdvarukonstruktion vill ha.
+
+\begin{aside}
+\note[En detalj som bits] Motorn behöver ändå kunna nollställas. En avbruten frame lämnar skräp i
+registret, och nästa frame som börjar med ett smutsigt register får fel checksumma från första
+biten. Nollställningen sker vid varje framestart.
+\end{aside}
+
+\subsection{Vad CRC:n inte skyddar}
+
+CRC:n täcker SOF till och med datafältet. Den täcker alltså \emph{inte} CRC-avgränsaren,
+ACK-fältet eller EOF. Fel i dem upptäcks i stället av formatreglerna: en avgränsare som inte är
+recessiv är ett formatfel (\kapref{ch:fel}).
+
+\section*{Övningar}
+
+\exercise{Stoppa en ström}{Räkning}
+\label{ex:3:1}
+Stoppa följande bitströmmar enligt femregeln, och markera de insatta bitarna.
+\begin{enumerate}[a)]
+  \item \code{0000011111}
+  \item \code{1111111111}
+  \item \code{0101010101}
+\end{enumerate}
+Hur många bitar blev var och en efter stoppning?
+
+\exercise{Avstoppa}{Räkning}
+\label{ex:3:2}
+En mottagare tar emot \code{111110000010}.
+\begin{enumerate}[a)]
+  \item Vilka bitar är stoppbitar?
+  \item Vilken var den ursprungliga bitströmmen?
+  \item Antag i stället att mottagaren fått \code{111111...}. Vad rapporterar den, och efter
+    vilken bit?
+\end{enumerate}
+
+\exercise{CRC-motorn}{Räkning}
+\label{ex:3:3}
+Mata in \code{1101} i ett nollställt CRC-15-register, ett steg i taget, och skriv upp registrets
+värde efter varje bit. Använd tabellen i avsnitt 3.3 som mall.
+
+\exercise{Varför noll?}{Resonemang}
+\label{ex:3:4}
+\begin{enumerate}[a)]
+  \item Varför står mottagarens register på noll när både data och checksumma matats in?
+  \item Vilken praktisk fördel har det för en hårdvarukonstruktion?
+  \item En nod matar av misstag in \emph{stoppbitarna} i CRC-motorn också. Vad händer, och vem
+    upptäcker det?
+\end{enumerate}

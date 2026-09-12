@@ -1,0 +1,16 @@
+% En nods tre feltillstånd.
+\begin{tikzpicture}[
+  every node/.style={font=\scriptsize},
+  st/.style={draw=rule, rounded corners=3pt, minimum width=2.5cm, minimum height=1.1cm,
+             align=center, font=\scriptsize},
+  arr/.style={-{Stealth[length=2mm]}, muted, line width=0.6pt}]
+
+  \node[st, fill=fillaccent3!70] (active)  at (0,0)     {\textbf{error active}\\\tiny TEC, REC $\leq$ 127};
+  \node[st, fill=fillaccent!60]  (passive) at (4.3,0)   {\textbf{error passive}\\\tiny någon $>$ 127};
+  \node[st, fill=fillmuted]      (off)     at (8.6,0)   {\textbf{bus off}\\\tiny TEC $>$ 255};
+
+  \draw[arr] (active) to[bend left=18] node[above, font=\tiny] {fel ökar} (passive);
+  \draw[arr] (passive) to[bend left=18] node[below, font=\tiny] {lyckade minskar} (active);
+  \draw[arr] (passive) to[bend left=18] node[above, font=\tiny] {TEC $>$ 255} (off);
+  \draw[arr] (off) to[bend left=30] node[below, font=\tiny] {återinitiering} (active);
+\end{tikzpicture}

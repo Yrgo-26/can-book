@@ -1,0 +1,193 @@
+\chapter{Bussen}
+\label{ch:buss}
+
+{\large\itshape Två ledningar, många noder, och en asymmetri som avgör allt.\par}
+
+\begin{chapterbox}{I det här kapitlet}
+\begin{itemize}
+  \item Varför punkt-till-punkt slutar fungera när ett system växer.
+  \item Den delade bussen, och vad den kostar.
+  \item Dominanta och recessiva bitar, och den logiska OCH-funktionen bussen utför.
+  \item Differentiell signalering och terminering, så långt den som bygger en nod behöver det.
+\end{itemize}
+\end{chapterbox}
+
+\section{Problemet}
+
+Ett inbyggt system med fem enheter som alla behöver prata med varandra behöver tio förbindelser
+om varje par kopplas ihop direkt. Med tio enheter är det fyrtiofem. Formeln är $n(n-1)/2$, och
+den är obeveklig: kablaget växer kvadratiskt medan nyttan växer linjärt.
+
+I en bil är det inte en teoretisk invändning. Motorstyrning, ABS, instrumentpanel, växellåda,
+krockkuddar, klimatanläggning --- och varje förbindelse är koppar som väger, kostar, tar plats och
+kan gå av.
+
+\textbf{Lösningen är att sluta koppla ihop enheter, och i stället koppla in dem.} En enda buss,
+som alla noder delar:
+
+\bookfigure{bus_topology}{Punkt-till-punkt mot delad buss. Fem noder kräver tio förbindelser i
+det vänstra fallet och en buss i det högra.}{fig:topology}
+
+Det som var $n(n-1)/2$ förbindelser blir $n$ anslutningar till en gemensam ledning. Priset är
+att bussen nu är en delad resurs, och delade resurser måste fördelas.
+
+\section{Vad en delad buss kostar}
+
+Tre problem uppstår i samma ögonblick som två noder delar en ledning, och CAN:s hela konstruktion
+är svaret på dem:
+
+\begin{booktable}{@{}lL@{}}
+\thead{Problem} & \thead{CAN:s svar} \\ \midrule
+Alla hör allt, så en mottagare måste veta vad som angår den & Identifieraren beskriver
+  \emph{innehållet}, och varje nod filtrerar själv (\kapref{ch:frameformat}) \\
+Två noder kan börja sända samtidigt & Icke-förstörande arbitrering (\kapref{ch:arbitrering}) \\
+En störning på ledningen träffar alla & Bitstoppning och CRC-15 (\kapref{ch:stuffing}), plus
+  felhantering (\kapref{ch:fel}) \\
+\end{booktable}
+
+Lägg märke till vad som \emph{inte} står i tabellen: adressering. CAN har ingen
+destinationsadress. Det är inte en förenkling utan ett designval, och \kapref{ch:frameformat} går igenom
+varför.
+
+\section{Dominant och recessiv}
+
+Här ligger den enda idé man måste ha helt klar för sig för att resten av CAN ska bli begripligt.
+
+En CAN-buss har två tillstånd, och de är \textbf{inte} symmetriska:
+
+\begin{narrowtable}{@{}lll@{}}
+\thead{Tillstånd} & \thead{Logisk nivå} & \thead{Vinner?} \\ \midrule
+\dom{} & 0 & Ja \\
+\rec{} & 1 & Nej \\
+\end{narrowtable}
+
+Regeln är enkel och får konsekvenser hela boken igenom:
+
+\begin{aside}
+\textbf{Bussen är dominant om \emph{minst en} nod driver den dominant. Den är recessiv bara om
+\emph{alla} noder släpper den.}
+\end{aside}
+
+Elektriskt är det en öppen dränering med ett uppdragsmotstånd: en nod kan bara \emph{dra ned}
+ledningen, aldrig driva upp den. Släpper alla, dras den upp av sig själv.
+
+Logiskt är bussen alltså en OCH-grind över alla noders utgångar:
+
+\bookfigure{wired_and}{Bussen som wired-AND. Tre noder, och bussens nivå som funktion av vad de
+driver: en enda dominant nod räcker för att bussen ska bli dominant.}{fig:wiredand}
+
+\subsection{Varför asymmetrin behövs}
+
+Anta i stället en symmetrisk buss, där en etta och en nolla som möts ger ett odefinierat
+mellanläge. Då är en kollision en \emph{förstörelse}: båda framesen blir obrukbara, båda noderna
+måste upptäcka det, vänta olika länge och försöka igen. Det är så Ethernet gjorde det, och det
+är därför Ethernet behövde slumpmässig backoff.
+
+Med asymmetrin blir en kollision i stället en \emph{jämförelse}. Noden som sänder recessivt och
+läser tillbaka dominant vet omedelbart två saker: att någon annan också sänder, och att den
+andra har företräde. Den drar sig ur, tyst, mitt i framen --- och den vinnande nodens frame fortsätter
+utan ett enda förlorat bitintervall.
+
+Det kallas \textbf{icke-förstörande arbitrering}, och det är CAN:s mest eleganta egenskap.
+\Kapref{ch:arbitrering} arbetar igenom den bit för bit.
+
+\subsection{Att läsa tillbaka det man sänder}
+
+En förutsättning som är lätt att gå förbi: \textbf{varje sändande nod läser hela tiden av bussen
+medan den sänder.} Det är så den upptäcker att den förlorat arbitreringen, och det är också så
+den upptäcker att bussen inte gör som den blev tillsagd.
+
+Den förenklade kontrollern gör detta under arbitreringsfältet. En fullständig CAN-kontroller gör
+det under \emph{hela} framen, och rapporterar ett \emph{bitfel} så fort det den läser tillbaka
+skiljer sig från det den sände. Skillnaden står i \kapref{ch:kursen}.
+
+\section{Ledningarna}
+
+CAN är \textbf{differentiellt}: signalen ligger som en spänningsskillnad mellan två ledare,
+\code{CAN_H} och \code{CAN_L}, tvinnade om varandra.
+
+\begin{narrowtable}{@{}lll@{}}
+\thead{Tillstånd} & \thead{\code{CAN_H}} & \thead{\code{CAN_L}} \\ \midrule
+\rec{} & 2,5 V & 2,5 V \\
+\dom{} & 3,5 V & 1,5 V \\
+\end{narrowtable}
+
+I recessivt läge driver ingen, och båda ledarna vilar på samma nivå --- skillnaden är noll. I
+dominant läge driver den sändande noden isär dem till ungefär två volt.
+
+Poängen med differentiell signalering är störimmunitet. En störning som slår mot kabeln träffar
+båda ledarna ungefär lika mycket, och eftersom mottagaren bara mäter \emph{skillnaden} tar den
+inte notis om den. Att ledarna är tvinnade är vad som gör att störningen verkligen träffar båda
+lika.
+
+\subsection{Terminering}
+
+En CAN-buss termineras med \textbf{120~\textohm{} i vardera änden}, inte i mitten, och inte fler än
+två motstånd oavsett hur många noder som sitter på bussen.
+
+Motstånden matchar kabelns karakteristiska impedans så att en signal som når änden absorberas i
+stället för att studsa tillbaka. En felterminerad buss fungerar ofta ändå på en kort kabel vid
+låg hastighet, och slutar fungera precis när man börjat lita på den --- vilket gör felet till ett
+av de obehagligare.
+
+\begin{aside}
+\note[Vid bänken] Ett snabbt sätt att kontrollera termineringen: mät resistansen över
+\code{CAN_H} och \code{CAN_L} med bussen strömlös. Två parallella 120~\textohm{} ska ge ungefär
+60~\textohm. Får ni 120 saknas ett motstånd; får ni 40 sitter det tre.
+\end{aside}
+
+\section{Hastighet och längd}
+
+CAN:s bithastighet och bussens längd hänger ihop, och skälet är arbitreringen: under
+arbitreringsfältet måste en bit hinna ut till bussens bortersta nod \emph{och} tillbaka innan
+biten är slut, annars kan inte noderna vara överens om vem som vann.
+
+\begin{narrowtable}{@{}ll@{}}
+\thead{Bithastighet} & \thead{Ungefärlig maximal längd} \\ \midrule
+1 Mbit/s & 40 m \\
+500 kbit/s & 100 m \\
+125 kbit/s & 500 m \\
+\end{narrowtable}
+
+Den förenklade kontrollern kör på \textbf{1 Mbit/s}, och bussen är en kabel på labbänken.
+Gränsen är alltså aldrig i närheten av att bli ett problem --- men sambandet är värt att känna
+till, eftersom det förklarar varför fordonssystem ofta kör långsammare än de skulle kunna.
+
+\section*{Övningar}
+
+\exercise{Kablage}{Räkning}
+\label{ex:1:1}
+\begin{enumerate}[a)]
+  \item Hur många förbindelser krävs för att koppla ihop åtta enheter punkt-till-punkt?
+  \item Hur många anslutningar krävs om de i stället delar en buss?
+  \item Vid vilket antal enheter blir punkt-till-punkt dubbelt så många förbindelser som
+    bussens anslutningar?
+\end{enumerate}
+
+\exercise{Bussens nivå}{Resonemang}
+\label{ex:1:2}
+Fyra noder sitter på en buss. Under ett visst bitintervall driver nod A recessivt, nod B
+dominant, nod C recessivt, och nod D driver inte alls.
+\begin{enumerate}[a)]
+  \item Vilken nivå har bussen?
+  \item Vilka av noderna läser tillbaka något annat än det de sände?
+  \item Vad drar de för slutsats av det?
+\end{enumerate}
+
+\exercise{Terminering}{Resonemang}
+\label{ex:1:3}
+En grupp mäter 40~\textohm{} över en strömlös buss.
+\begin{enumerate}[a)]
+  \item Vad är fel?
+  \item Bussen fungerar ändå på labbänken. Varför, och när skulle den sluta göra det?
+\end{enumerate}
+
+\exercise{Asymmetrin}{Resonemang}
+\label{ex:1:4}
+Anta en tänkt buss där recessiv i stället vann över dominant --- alltså där bussen är recessiv om
+minst en nod driver den recessivt.
+\begin{enumerate}[a)]
+  \item Skulle arbitreringen fortfarande fungera?
+  \item Vilket identifierarvärde skulle i så fall ha högst prioritet?
+  \item Varför valde CAN den ordning den valde? Tänk på vad bussen gör när ingen sänder.
+\end{enumerate}

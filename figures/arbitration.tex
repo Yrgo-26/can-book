@@ -1,0 +1,47 @@
+% Arbitrering mellan två noder: A förlorar vid bit 8.
+\begin{tikzpicture}[
+  every node/.style={font=\scriptsize},
+  bit/.style={minimum width=6.2mm, minimum height=5mm, inner sep=0pt, align=center,
+              font=\scriptsize}]
+
+  \def\bits{{0,1,0,1,0,1,0,0,1,1,1}}   % A: 0x2A7
+  \def\bitsb{{0,1,0,1,0,1,0,0,0,1,1}}  % B: 0x2A3
+
+  % Rubriker.
+  \node[anchor=east, font=\scriptsize\bfseries] at (-0.15,0.6)  {bit};
+  \node[anchor=east, font=\scriptsize\bfseries] at (-0.15,0)    {A};
+  \node[anchor=east, font=\scriptsize\bfseries] at (-0.15,-0.6) {B};
+  \node[anchor=east, font=\scriptsize\bfseries] at (-0.15,-1.2) {buss};
+
+  \foreach \i in {0,...,10} {
+    \pgfmathsetmacro{\x}{\i*0.65}
+    \pgfmathtruncatemacro{\n}{\i+1}
+    \pgfmathtruncatemacro{\a}{\bits[\i]}
+    \pgfmathtruncatemacro{\b}{\bitsb[\i]}
+    \pgfmathtruncatemacro{\bus}{min(\a,\b)}
+
+    \node[bit, muted] at (\x,0.6) {\n};
+
+    % A slutar sända efter bit 8 (index 7).
+    \ifnum\i<9
+      \node[bit, draw=rule, fill=white] at (\x,0) {\a};
+    \else
+      \node[bit, draw=rule, fill=fillmuted] at (\x,0) {\textcolor{ink}{\textbf{--}}};
+    \fi
+
+    \node[bit, draw=rule, fill=white] at (\x,-0.6) {\b};
+
+    \ifnum\bus=0
+      \node[bit, draw=rule, fill=fillaccent!70] at (\x,-1.2) {\bus};
+    \else
+      \node[bit, draw=rule, fill=fillaccent2!60] at (\x,-1.2) {\bus};
+    \fi
+  }
+
+  % Markera bit 8.
+  \pgfmathsetmacro{\xl}{8*0.65}
+  \draw[accent, line width=0.8pt] (\xl-0.33,0.32) rectangle (\xl+0.33,-1.45);
+  \node[accent, anchor=north, font=\scriptsize\bfseries, align=center]
+    at (\xl,-1.62) {A sänder 1, läser 0\\[-0.2ex] A förlorar};
+
+\end{tikzpicture}

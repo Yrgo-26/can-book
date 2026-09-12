@@ -1,0 +1,263 @@
+\chapter{Svar på övningarna}
+\label{ch:svar}
+
+Här finns svaren på samtliga övningar. Läs dem efter att ni försökt själva --- ett svar man läst
+är inte samma sak som ett svar man kommit fram till, och det är den skillnaden övningarna finns
+för.
+
+Där ett svar bygger på en uträkning står uträkningen med, inte bara resultatet.
+
+\section{Bussen}
+
+\solution{ex:1:1}{Kablage}
+\ans{a} $8 \cdot 7 / 2 = 28$ förbindelser.
+\ans{b} 8 anslutningar, en per enhet.
+\ans{c} Vi söker $n$ där $n(n-1)/2 = 2n$, alltså $n - 1 = 4$ och $n = 5$. Redan vid fem enheter
+är punkt-till-punkt dubbelt så mycket koppar, och avståndet växer sedan snabbt.
+
+\solution{ex:1:2}{Bussens nivå}
+\ans{a} \dom. Bussen är dominant så snart minst en nod drar ned den, och nod B gör det.
+\ans{b} Nod A och nod C. Båda sände recessivt och läser tillbaka dominant. Nod D sände ingenting
+och har inget att jämföra med.
+\ans{c} Att någon annan sänder samtidigt, och att den andra har företräde. Sker det i
+arbitreringsfältet har A och C förlorat arbitreringen och blir mottagare.
+
+\solution{ex:1:3}{Terminering}
+\ans{a} Det sitter tre termineringsmotstånd i stället för två: tre parallella 120~\textohm{} ger
+40~\textohm. Troligen har en nod mitt på bussen ett motstånd påslaget.
+\ans{b} För låg terminering dämpar signalen men förstör den inte på en kort kabel vid måttlig
+hastighet --- flankerna hinner ändå ställa sig. Felet visar sig när kabeln blir längre, farten
+högre eller miljön störigare, alltså typiskt när konstruktionen flyttas från labbänken.
+
+\solution{ex:1:4}{Asymmetrin}
+\ans{a} Ja. Arbitreringen kräver bara att \emph{ett} av de två tillstånden vinner entydigt; vilket
+spelar ingen roll för mekanismen.
+\ans{b} Högst identifierare skulle vinna, eftersom en etta då skrev över en nolla.
+\ans{c} Tänk på vad bussen gör när ingen sänder: den vilar i det tillstånd ingen driver, alltså
+recessivt. Med den valda ordningen är viloläget det \emph{förlorande} tillståndet, vilket betyder
+att en nod som slutar sända automatiskt drar sig ur. Vore det tvärtom skulle en tyst buss se ut
+som en nod som vinner allt, och en nod som tappade strömmen skulle blockera bussen.
+
+\section{Framen}
+
+\solution{ex:2:1}{Läs framen}
+\ans{a} $1 + 12 + 6 + 40 + 16 + 2 + 7 = 84$ bitar. SOF 1, arbitreringsfält 12 (11 identifierare +
+RTR), kontrollfält 6, data $5 \cdot 8 = 40$, CRC-fält 16 (15 + avgränsare), ACK-fält 2, EOF 7.
+\ans{b} 84~µs vid 1~Mbit/s, före stoppning. Med stoppbitar och de tre bitarna intermission blir
+det i praktiken något mer.
+\ans{c} \code{0x2A6}, eftersom lägre numeriskt värde vinner.
+
+\solution{ex:2:2}{Ingen adress}
+\ans{a} En. Sensorn sänder temperaturen en gång, med en identifierare som beskriver
+\emph{innehållet}.
+\ans{b} Två frames, en till vardera mottagaren, eller en broadcast-adress som protokollet måste
+definiera särskilt.
+\ans{c} Ingenting. Den tredje noden börjar bara lyssna efter samma identifierare. Det är CAN:s
+starkaste argument: mottagare kan läggas till utan att sändaren vet om det.
+
+\solution{ex:2:3}{Kvittensen}
+\ans{a} Att minst en nod tog emot framen med korrekt CRC.
+\ans{b} Hur många som gjorde det, vilka de var, om någon av dem brydde sig om innehållet, och om
+någon faktiskt behandlade den. Kvittensen gäller överföringen, inte behandlingen.
+\ans{c} Den läser recessivt, eftersom ingen annan finns som kan dra ned luckan. En standardenlig
+kontroller tolkar det som ett kvittensfel, ökar sin sändarfelräknare och skickar om --- vilket är
+varför en ensam nod på en CAN-buss sänder samma frame om och om igen tills någon svarar.
+
+\solution{ex:2:4}{DLC}
+\ans{a} Fältet ligger i kontrollfältet vars bredd var bestämd, och fyra bitar var vad som fanns.
+Att bara 0--8 används är priset för ett fält som är jämnt i bitantal snarare än snålt.
+\ans{b} Drivrutinens. Registerlagret vidarebefordrar värdet som det är, och kontrollern
+sekvenserar efter det --- ingen av dem validerar. Att lägga kontrollen på båda ställena är precis
+så de två kopiorna av regeln glider isär; den hör hemma där framen skapas.
+
+\section{Bitstoppning och CRC-15}
+
+\solution{ex:3:1}{Stoppa en ström}
+\ans{a} \code{0000011111} blir \code{000001111101}: en stoppbit efter de fem nollorna och en efter
+de fem ettorna. 10 bitar blir 12.
+\ans{b} \code{1111111111} blir \code{111110111110}: en stoppbit efter de första fem ettorna, och
+eftersom stoppbiten själv bryter serien räknas de följande fem ettorna om från början, vilket ger
+ytterligare en. 10 bitar blir 12.
+\ans{c} \code{0101010101} är oförändrad. Ingen serie når fem, så ingen stoppbit behövs. 10 bitar
+förblir 10.
+
+\solution{ex:3:2}{Avstoppa}
+\ans{a} Biten på position 6 (nollan efter fem ettor) och biten på position 11 (ettan efter fem
+nollor). Positionerna räknas från ett.
+\ans{b} \code{1111100000}.
+\ans{c} Ett stoppfel, efter den sjätte biten. Efter fem lika bitar \emph{måste} nästa vara den
+motsatta; är den det inte är bitströmmen trasig, och mottagaren förkastar framen.
+
+\solution{ex:3:3}{CRC-motorn}
+Registret efter varje bit, med start från noll:
+
+\begin{narrowtable}{@{}llll@{}}
+\thead{Bit} & \thead{Värde} & \thead{Registret efter} & \thead{Hex} \\ \midrule
+1 & 1 & \code{100010110011001} & \code{0x4599} \\
+2 & 1 & \code{000101100110010} & \code{0x0B32} \\
+3 & 0 & \code{001011001100100} & \code{0x1664} \\
+4 & 1 & \code{110100101010001} & \code{0x6951} \\
+\end{narrowtable}
+
+Lägg märke till steg 2 och 3: när registrets översta bit och den inkommande biten är lika blir
+återkopplingen noll, och steget är en ren skiftning utan XOR.
+
+\solution{ex:3:4}{Varför noll?}
+\ans{a} Checksumman är resten vid division med polynomet. Att lägga resten sist i dividenden gör
+den jämnt delbar, och en jämn division lämnar resten noll. Mottagaren behöver därför ingen
+jämförelse --- den tittar bara efter om registret är nollställt.
+\ans{b} Samma modul kan användas på både sändar- och mottagarsidan, utan lägesomkoppling och utan
+en separat jämförelsekrets. I hårdvara är det en påtaglig besparing, och en felkälla mindre.
+\ans{c} Sändarens och mottagarens checksummor beräknas då över olika bitströmmar, eftersom
+stoppbitarna beror på datan. Resultatet blir att varje frame som innehåller minst en stoppbit
+förkastas som CRC-fel --- alltså nästan alla. Symptomet är förvirrande: korta frames med växlande
+data fungerar, längre frames gör det inte.
+
+\section{Arbitrering}
+
+\solution{ex:4:1}{Två noder}
+\ans{a} \code{0x155} är \code{00101010101} och \code{0x154} är \code{00101010100}.
+\ans{b} Vid bit 11, den sista biten i identifieraren.
+\ans{c} B vinner, eftersom den sänder dominant där A sänder recessivt. A upptäcker det omedelbart,
+slutar sända, blir mottagare för B:s frame och försöker igen när bussen blivit ledig.
+
+\solution{ex:4:2}{Tre noder}
+Binärt: \code{0x400} är \code{10000000000}, \code{0x200} är \code{01000000000} och \code{0x201} är
+\code{01000000001}.
+\ans{a} Vid bit 1. A sänder recessivt medan B och C sänder dominant, så A faller bort direkt.
+\ans{b} Vid bit 11. B och C är identiska i tio bitar och skiljer sig först i den sista.
+\ans{c} B, med identifieraren \code{0x200}.
+
+\solution{ex:4:3}{Samma identifierare}
+\ans{a} Ingenting. Bitarna är identiska hela arbitreringsfältet igenom, så ingen av noderna ser
+någon skillnad mellan sig själv och bussen. Båda tror att de vann.
+\ans{b} Så fort datafälten skiljer sig sänder den ena noden recessivt och läser dominant. Utanför
+arbitreringsfältet är det inte en förlorad arbitrering utan ett \emph{bitfel}: noden avbryter med
+en felframe, båda frames förstörs, och båda noderna skickar om --- varpå samma sak händer igen.
+\ans{c} Därför att det inte kan uppstå i drift av en korrekt konfigurerad buss. Identifierare
+tilldelas per sändande nod vid systemdesignen; två noder med samma identifierare är ett fel i
+tilldelningen, inte något som händer av sig självt.
+
+\solution{ex:4:4}{Svält}
+\ans{a} Den förlorar varje arbitrering mot varje annan nod, eftersom \code{0x7FF} är det högsta
+möjliga värdet och därmed lägst prioritet. Är bussen alltid upptagen kommer den aldrig fram.
+\ans{b} Nej. Protokollet garanterar att den \emph{högst} prioriterade framen kommer fram inom en
+förutsägbar tid, och det är vad determinism i CAN betyder. Att lågprioriterad trafik kan svälta
+är en konsekvens av prioritetsordningen, och den ordningen är poängen.
+\ans{c} Till exempel: hålla bussbelastningen nere (30--50~\% är tumregeln i fordonssystem);
+planera identifierarna efter vad som är tidskritiskt; periodisera sändningarna så att ingen nod
+sänder så ofta den kan; eller dela upp trafiken på flera bussar.
+
+\section{Bittajming}
+
+\solution{ex:5:1}{Räkna tajmingen}
+\ans{a} $50\,000\,000 / 1\,000\,000 = 50$ klockcykler per bit.
+\ans{b} $50\,000\,000 / 500\,000 = 100$ klockcykler per bit.
+\ans{c} $50 \cdot 0{,}7 = 35$, alltså vid tick 35 av 50.
+
+\solution{ex:5:2}{Sampelpunkten}
+\ans{a} För att signalen ska hinna ut till bussens bortersta nod och tillbaka innan biten läses.
+Det är propagationssegmentets uppgift, och sampelpunkten måste ligga efter det.
+\ans{b} Under arbitreringen skulle en nod läsa bussen innan en annan nods dominanta bit hunnit
+fram, och alltså tro att den vann när den förlorade. Två noder skulle då sända samtidigt resten
+av framen.
+\ans{c} Propagationssegmentet. Det är det segment som representerar gångtiden, och det är därför
+kabellängd och bithastighet hänger ihop.
+
+\solution{ex:5:3}{Stoppning och synk}
+\ans{a} Fem.
+\ans{b} Bitstoppningen, femregeln. Efter fem lika bitar sätts alltid en bit med motsatt värde in,
+vilket garanterar en flank.
+\ans{c} Mottagarna skulle kunna gå långa sträckor utan flanker att resynkronisera mot, och driva
+i väg tills de samplar fel bit. Det skulle i praktiken kräva en klockledning eller betydligt
+noggrannare oscillatorer --- vilket är själva skälet till att stoppningen finns.
+
+\solution{ex:5:4}{Två symptom}
+\ans{a} Ingenting fungerar. Noderna är ur fas redan från SOF, så varje frame blir obegriplig i
+andra änden. Felet syns omedelbart och är därför det snällare av de två.
+\ans{b} De flesta bitar läses lika, men de som ligger nära en flank eller påverkas av
+propagationsfördröjning läses olika. Symptomet blir sporadiska CRC- och stoppfel som blir värre
+med längre kabel och högre belastning. Det är svårare att felsöka därför att det ser ut som en
+dålig kabel eller en störig miljö, och därför att det fungerar tillräckligt bra för att man ska
+tro att grundinställningen är rätt.
+
+\section{Felhantering}
+
+\solution{ex:6:1}{Vem ser felet?}
+\ans{a} CRC-fel. Mottagarna upptäcker det; sändaren får veta det indirekt, genom att ingen
+kvitterar.
+\ans{b} Formatfel. Alla noder ser det, eftersom alla vet vilka bitar som måste vara recessiva.
+\ans{c} Kvittensfel. Bara sändaren ser det: den släpper ACK-luckan och läser tillbaka recessivt.
+\ans{d} Stoppfel. Alla noder ser det, eftersom alla räknar lika bitar i rad.
+
+\solution{ex:6:2}{Räknarna}
+\ans{a} $8 \cdot 8 = 64$.
+\ans{b} $64 - 20 = 44$.
+\ans{c} Error active i båda fallen, eftersom gränsen till error passive går vid 127.
+
+Lägg märke till proportionerna: åtta fel kostar 64, och det krävs 64 lyckade sändningar för att
+arbeta av dem. Räknaren är medvetet trögare på vägen ned än på vägen upp.
+
+\solution{ex:6:3}{Asymmetrin}
+\ans{a} Därför att räknarna inte mäter hur många fel som inträffat, utan hur sannolikt det är att
+felet är nodens eget. En sändande nod är inblandad i varje fel den ser; en mottagande nod är en av
+många som såg samma fel. Den som sänder är alltså en mer trolig felkälla, och straffas därefter.
+\ans{b} Den trasiga noden är inblandad i \emph{varje} fel och klättrar åtta steg i taget, medan
+den friska noden på en störig buss ökar ett steg i taget och hinner arbeta av sig mellan
+störningarna. Efter en stund är den trasiga noden error passive eller bus off medan den friska
+fortfarande är error active.
+
+\solution{ex:6:4}{Bus off}
+\ans{a} Därför att en nod med en trasig sändare rapporterar fel på varje frame --- också på de
+frames som är helt korrekta. Dess felframes är dominanta och förstör andras trafik, så en enda
+trasig nod kan lägga hela bussen.
+\ans{b} Den hade blivit oanvändbar. Varje frame från varje nod hade avbrutits av den trasiga
+nodens felflagga, och all trafik hade upphört.
+\ans{c} Därför att felet kan vara övergående: en lös kontakt, en störning, en spänningsdipp. En
+permanent avstängning hade krävt att någon åker ut och startar om noden för hand, också när felet
+sedan länge är borta.
+
+\section{Den förenklade kontrollern}
+
+\solution{ex:7:1}{Vad saknas}
+\ans{a} Fullständig: förloraren blir mottagare och tar emot den vinnande framen, och skickar om
+sin egen automatiskt när bussen blivit ledig. Förenklad: förloraren sätter sin felflagga, lämnar
+sändarrollen och går till vila --- den tar inte emot framen som vann, och skickar inte om.
+\ans{b} Fullständig: mottagaren avbryter med en felframe, alla noder kastar framen, och sändaren
+skickar om. Förenklad: mottagaren förkastar framen och sätter felflaggan. Ingen felframe sänds,
+så sändaren vet ingenting.
+\ans{c} Fullständig: sändaren upptäcker kvittensfelet och skickar om. Förenklad: sändaren läser
+aldrig tillbaka ACK-luckan, så överföringen fullbordas precis som om allt gått bra.
+\ans{d} Fullständig: båda hamnar i mottagningskön. Förenklad: den andra skriver över den första
+om den första inte hunnit kvitteras, och den nyaste vinner.
+
+\solution{ex:7:2}{Klibbiga bitar}
+\ans{a} $40 \cdot 10^{-6} \cdot 50 \cdot 10^{6} = 2000$ klockcykler.
+\ans{b} Så gott som ingenting. Pulsen är en cykel lång och sannolikheten att en pollning råkar
+träffa just den cykeln är ungefär 1 på 2000. Mjukvaran skulle missa nästan varje händelse, och de
+få den fångade skulle se slumpmässiga ut.
+\ans{c} Därför att en automatisk nollställning vid läsning gör det omöjligt att läsa statusen två
+gånger, och därmed omöjligt att skriva kod som först kontrollerar en bit och sedan agerar på den.
+En uttrycklig nollställning skiljer dessutom "jag har sett händelsen" från "jag har hanterat
+den" --- och det är mjukvaran, inte hårdvaran, som vet när det senare är sant.
+
+\solution{ex:7:3}{Två steg}
+\ans{a} Den förväxlar \emph{porten är fri igen} med \emph{framen kom fram}. Statusbiten kommer
+tillbaka både efter en lyckad sändning och efter en förlorad arbitrering.
+\ans{b} Vänta på att porten blir fri, och \emph{sedan} läsa felflaggan. Först den kombinationen
+säger hur det gick.
+\ans{c} Förlorad arbitrering, stoppfel, misslyckad CRC-kontroll, och en mottagen fjärrframe. Alla
+fyra ger samma enda bit, så drivrutinen kan inte skilja dem åt.
+
+\solution{ex:7:4}{Gränsen}
+\ans{a} Till exempel genom att buffra mottagna frames i en kö, så att mjukvaran aldrig märkte att
+kontrollern bara håller en. Eller genom att automatiskt nollställa statusbiten vid läsning, så
+att mjukvaran slapp kvittera.
+\ans{b} Ett dolt beteende är ett beteende man inte kan resonera om. En kö som ibland svämmar över
+ger frames som försvinner utan spår, och felsökningen börjar på fel ställe: i mjukvaran, som
+gjorde rätt. En begränsning man känner till går att planera för; en man inte känner till går
+bara att stöta på.
+\ans{c} Att ett gränssnitt ska vara \emph{ärligt} snarare än hjälpsamt. Ett lager som döljer
+den underliggande hårdvarans egenskaper flyttar inte problemet, det gör det bara osynligt --- och
+det som är osynligt går inte att testa, mäta eller resonera om. Samma princip gäller ett
+drivrutins-API: det ska säga vad hårdvaran gör, inte vad man önskar att den gjorde.

@@ -1,0 +1,23 @@
+% Bitperiodens fyra segment, med sampelpunkten mellan fassegment 1 och 2.
+\begin{tikzpicture}[
+  every node/.style={font=\scriptsize},
+  seg/.style={draw=rule, minimum height=8mm, inner sep=2pt, anchor=west, align=center,
+              font=\scriptsize}]
+
+  \node[seg, minimum width=0.9cm, fill=fillaccent!70]  (sync) at (0,0)    {synk\\\tiny 1 tq};
+  \node[seg, minimum width=2.4cm, fill=fillaccent2!60] (prop) at (0.9,0)  {propagation\\\tiny 1--8 tq};
+  \node[seg, minimum width=2.0cm, fill=fillaccent3!70] (ph1)  at (3.3,0)  {fas 1\\\tiny 1--8 tq};
+  \node[seg, minimum width=2.0cm, fill=fillmuted]      (ph2)  at (5.3,0)  {fas 2\\\tiny 1--8 tq};
+
+  % Sampelpunkten.
+  \draw[accent, line width=1pt] (5.3,-0.6) -- (5.3,0.75);
+  \node[accent, anchor=south, font=\scriptsize\bfseries] at (5.3,0.78) {sampelpunkt};
+
+  % Bitperioden.
+  \draw[decorate, decoration={brace, amplitude=4pt, mirror}, muted]
+    (0,-0.62) -- (7.3,-0.62);
+  \node[muted, anchor=north, font=\scriptsize] at (3.65,-0.9) {en bitperiod};
+
+  % Flank vid periodens början.
+  \node[recessive, anchor=east, font=\scriptsize] at (-0.12,0) {flank};
+\end{tikzpicture}
