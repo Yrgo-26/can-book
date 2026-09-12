@@ -1,0 +1,39 @@
+# Set pipeline name.
+name: Book
+
+# Build and publish the book whenever a version tag is pushed, e.g. v1.0.0.
+on:
+  push:
+    tags: ["v*"]
+
+# Creating a release needs write access to the repository's contents.
+permissions:
+  contents: write
+
+# Define pipeline jobs.
+jobs:
+  # Build the PDF with the tag on its title page, and attach it to a release named after the tag.
+  release:
+    name: Build and release the book
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      # TeX Live is not on the runner image, so the package lists have to be current. A failing
+      # third-party repository must not stop the Ubuntu lists from being used.
+      # texlive-lang-european carries the Swedish hyphenation patterns babel asks for.
+      - name: Install LuaLaTeX and fonts
+        run: |
+          sudo apt-get update || true
+          sudo apt-get install -y make texlive-luatex texlive-latex-extra \
+                                  texlive-lang-european fonts-texgyre fonts-texgyre-math \
+                                  fonts-dejavu-core
+      - name: Build
+        run: make VERSION="${{ github.ref_name }}"
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" can.pdf \
+            --title "CAN - bussen, framen och kontrollern, ${{ github.ref_name }}" \
+            --notes "Boken byggd från ${{ github.sha }}."
