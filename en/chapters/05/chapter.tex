@@ -1,0 +1,157 @@
+\chapter{Bit timing}
+\label{ch:tajming}
+
+{\large\itshape How nodes without a shared clock read the same bit at the same time.\par}
+
+\begin{chapterbox}{In this chapter}
+\begin{itemize}
+  \item Why a CAN bit is divided into segments instead of just being counted.
+  \item The sample point, and why it lies late in the bit period.
+  \item Synchronisation: hard at SOF, soft at every edge after that.
+  \item What happens when two nodes' oscillators do not run at the same speed.
+\end{itemize}
+\end{chapterbox}
+
+\section{The problem}
+
+Every node has its own clock. No wire carries the beat --- CAN has four signals and none of them is
+a clock.
+
+Even so, every node has to agree on where each bit begins and ends, and at bit level at that:
+arbitration in \kapref{ch:arbitrering} relies on two nodes reading the \emph{same} bit interval at
+the same time and drawing conclusions from what they see. If they are out of phase they compare
+different bits, and the result is arbitrary.
+
+The solution has two parts: a shared \emph{definition} of where in the bit period to read, and a
+mechanism that pulls drifting nodes back.
+
+\section{The bit period in segments}
+
+A CAN bit is not an undivided interval but is split into four segments, measured in
+\textbf{time quanta} --- short, equally long steps that the node counts with its own clock.
+
+\bookfigure{bit_timing}{The four segments of the bit period. The sample point lies between phase
+segments~1 and 2, late in the period.}{fig:timing}
+
+\begin{booktable}{@{}llL@{}}
+\thead{Segment} & \thead{Length} & \thead{What it is for} \\ \midrule
+Sync segment & 1 tq & This is where an edge is expected. \\
+Propagation segment & 1--8 tq & Covers the signal's travel time out along the bus and back. \\
+Phase segment 1 & 1--8 tq & Before the sample point; can be lengthened on resynchronisation. \\
+Phase segment 2 & 1--8 tq & After the sample point; can be shortened. \\
+\end{booktable}
+
+The \textbf{sample point} lies between phase segments 1 and 2. That is where, and only where, the
+bit is read.
+
+\subsection{Why late in the period}
+
+The sample point is typically placed 70--80~\% into the bit period. The reason is the propagation
+segment, and it is the same reason that makes the length of the bus limit the speed.
+
+During arbitration, a transmitting node must have time to read back what \emph{the farthest} node
+drives, before the bit ends. The signal has to make it out and back. The propagation segment is
+that time, and the sample point has to come after it --- otherwise the node reads the bus before
+the other node's bit has arrived, and arbitration goes wrong.
+
+\begin{aside}
+\note That is why bit rate and cable length are linked (\kapref{ch:buss}). A higher speed gives a
+shorter bit period, so a shorter propagation segment in absolute time, so a shorter permissible
+cable. The relationship is not electrical but logical: it is about what arbitration requires.
+\end{aside}
+
+\section{Synchronisation}
+
+\subsection{Hard synchronisation}
+
+At SOF --- the only edge that every node sees at the same time after the bus has been idle --- every
+receiver performs a \textbf{hard synchronisation}: it resets its bit counter, wherever it was.
+
+That is once per frame, and it is the only time the nodes may set the clock entirely freely.
+
+\subsection{Resynchronisation}
+
+During the frame that is not enough. Two oscillators that differ by a fraction of a percent drift
+apart slowly, and over a frame of 130 bits it becomes measurable.
+
+That is why every receiver resynchronises on \emph{every} recessive-to-dominant edge in the stream.
+If the edge comes earlier than expected, phase segment 2 is shortened; if it comes later, phase
+segment 1 is lengthened. The adjustment is limited to a number of time quanta called the
+\emph{synchronization jump width}.
+
+\textbf{And now bit stuffing falls into place.} The rule of five in \kapref{ch:stuffing} guarantees
+that no more than five bit periods ever pass without an edge, which puts an upper bound on how far
+two nodes can drift apart before they are pulled back.
+
+\begin{aside}
+So the two mechanisms are not independent: bit stuffing exists \emph{for} resynchronisation's sake.
+A protocol without stuffing would need either a clock line or considerably more accurate
+oscillators.
+\end{aside}
+
+\section{Working out the timing}
+
+For a design, two numbers are derived from the system clock and the desired bit rate:
+
+\[ \text{ticks per bit} = \frac{f_{\text{system}}}{\text{bit rate}} \]
+
+With a 50~MHz system clock and 1~Mbit/s that is 50 clock cycles per CAN bit. The sample point at
+70~\% is then tick 35.
+
+\begin{cppcode}
+// Derived, never written down as a literal: change the bit rate and both follow.
+constexpr unsigned TicksPerBit{SystemClockHz / BitRateHz};
+constexpr unsigned SampleTick{TicksPerBit * 7U / 10U};
+\end{cppcode}
+
+That they are \emph{derived} rather than written in is the point. A design where \code{50} and
+\code{35} are written in, each in its own place, is a design where one of them gets changed without
+the other.
+
+\section{What happens when it goes wrong}
+
+Two faults are worth recognising, because they look different:
+
+\textbf{Wrong bit rate.} The nodes are out of phase from the first bit. The symptom is that nothing
+works at all --- no frames are received, and the transmitting node reports errors straight away.
+It is the kinder fault, because it shows immediately.
+
+\textbf{Wrong sample point.} The nodes agree on most bits but not all. The symptom is sporadic CRC
+and stuff errors that get worse with a longer cable and higher load. This is the nasty fault,
+because it looks like a bad cable.
+
+\section*{Exercises}
+
+\exercise{Work out the timing}{Calculation}
+\label{ex:5:1}
+A design has a 50~MHz system clock.
+\begin{enumerate}[a)]
+  \item How many clock cycles are there in a CAN bit at 1~Mbit/s?
+  \item At 500~kbit/s?
+  \item Where is the sample point, counted in clock cycles, at 1~Mbit/s and 70~\%?
+\end{enumerate}
+
+\exercise{The sample point}{Reasoning}
+\label{ex:5:2}
+\begin{enumerate}[a)]
+  \item Why does the sample point lie late in the bit period instead of in the middle?
+  \item What would go wrong during arbitration if it were at 20~\%?
+  \item Which part of the bit period would have to grow if the cable became twice as long?
+\end{enumerate}
+
+\exercise{Stuffing and sync}{Reasoning}
+\label{ex:5:3}
+\begin{enumerate}[a)]
+  \item At most how many bit periods can pass without an edge in a CAN frame?
+  \item Which mechanism guarantees that?
+  \item What would happen to resynchronisation if bit stuffing were removed?
+\end{enumerate}
+
+\exercise{Two symptoms}{Reasoning}
+\label{ex:5:4}
+Two nodes are supposed to talk to each other.
+\begin{enumerate}[a)]
+  \item Node A is set to 500~kbit/s and node B to 1~Mbit/s. What do you see?
+  \item Both run at 1~Mbit/s, but A samples at 50~\% and B at 80~\%. What do you see, and why is it
+    harder to debug?
+\end{enumerate}

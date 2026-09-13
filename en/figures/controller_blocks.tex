@@ -1,0 +1,36 @@
+% The simplified controller's blocks, plus the layer that makes it reachable.
+\begin{tikzpicture}[
+  every node/.style={font=\scriptsize},
+  blk/.style={draw=rule, rounded corners=2pt, minimum width=2.6cm, minimum height=0.72cm,
+              align=center, font=\scriptsize, fill=white},
+  grp/.style={draw=rule, dashed, rounded corners=3pt, inner sep=6pt},
+  arr/.style={-{Stealth[length=1.8mm]}, muted, line width=0.5pt}]
+
+  % The software side.
+  \node[blk, fill=fillaccent2!45] (sw) at (0,3.4) {software on a processor};
+
+  % The reachability layer.
+  \node[blk, fill=fillaccent!45] (bridge) at (0,2.3) {serial bridge};
+  \node[blk, fill=fillaccent!45] (bank)   at (0,1.4) {register bank};
+
+  % The CAN side.
+  \node[blk, fill=fillaccent3!50] (ctrl)  at (0,0.3) {controller\\\tiny state machine + arbitration};
+  \node[blk, minimum width=1.7cm] (timer) at (-2.1,-1.0) {bit timer};
+  \node[blk, minimum width=1.7cm] (crc)   at (-0.1,-1.0) {CRC-15};
+  \node[blk, minimum width=1.7cm] (shift) at (2.0,-1.0)  {shift\\registers};
+
+  \node[blk, fill=fillmuted] (bus) at (0,-2.2) {the CAN bus};
+
+  \draw[arr] (sw) -- (bridge);
+  \draw[arr] (bridge) -- (bank);
+  \draw[arr] (bank) -- (ctrl);
+  \draw[arr] (ctrl) -- (timer);
+  \draw[arr] (ctrl) -- (crc);
+  \draw[arr] (ctrl) -- (shift);
+  % The bus is driven and read by the controller, not by the leaf blocks: route around them.
+  \draw[arr] (ctrl.east) -- ++(1.15,0) |- (bus.east);
+
+  % Labels in the margin.
+  \node[anchor=west, muted, font=\scriptsize\itshape] at (2.9,1.85) {makes the controller reachable};
+  \node[anchor=west, muted, font=\scriptsize\itshape] at (2.9,-1.0) {knows CAN};
+\end{tikzpicture}

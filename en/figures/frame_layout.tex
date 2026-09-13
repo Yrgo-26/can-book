@@ -1,0 +1,35 @@
+% The data frame's fields, with widths in bits.
+\begin{tikzpicture}[
+  every node/.style={font=\scriptsize},
+  f/.style={draw=rule, minimum height=7mm, inner sep=0pt, anchor=west,
+            font=\scriptsize, align=center}]
+
+  \def\y{0}
+  \newcommand{\field}[4]{%
+    \node[f, minimum width=#2, fill=#3] at (#1,\y) {#4};}
+
+  % x, width, colour, label
+  \field{0.00}{0.42cm}{fillaccent!70}{\rotatebox{90}{\tiny SOF}}
+  \field{0.42}{2.10cm}{fillaccent2!80}{Identifier\\\tiny 11}
+  \field{2.52}{0.42cm}{fillaccent2!80}{\rotatebox{90}{\tiny RTR}}
+  \field{2.94}{0.42cm}{fillmuted}{\rotatebox{90}{\tiny IDE}}
+  \field{3.36}{0.42cm}{fillmuted}{\rotatebox{90}{\tiny r0}}
+  \field{3.78}{0.85cm}{fillmuted}{DLC\\\tiny 4}
+  \field{4.63}{2.20cm}{fillaccent3!80}{Data\\\tiny 0--64}
+  \field{6.83}{1.40cm}{fillmuted}{CRC\\\tiny 15}
+  \field{8.23}{0.42cm}{fillmuted}{\rotatebox{90}{\tiny del}}
+  \field{8.65}{0.42cm}{fillaccent!70}{\rotatebox{90}{\tiny ACK}}
+  \field{9.07}{0.42cm}{fillmuted}{\rotatebox{90}{\tiny del}}
+  \field{9.49}{1.00cm}{fillmuted}{EOF\\\tiny 7}
+
+  % The arbitration field, marked underneath.
+  \draw[decorate, decoration={brace, amplitude=4pt, mirror}, accent2]
+    (0.0,-0.42) -- (2.94,-0.42);
+  \node[accent2, anchor=north, font=\scriptsize\bfseries] at (1.47,-0.72)
+    {arbitration field};
+
+  % The control field.
+  \draw[decorate, decoration={brace, amplitude=4pt, mirror}, muted]
+    (2.94,-0.42) -- (4.63,-0.42);
+  \node[muted, anchor=north, font=\scriptsize] at (3.78,-0.72) {control field};
+\end{tikzpicture}

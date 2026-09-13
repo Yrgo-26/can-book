@@ -1,40 +1,22 @@
-# Bygg boken: två LuaLaTeX-pass, det andra för innehållsförteckning och referenser.
+# Both editions of the book.
 #
-#   make                 bygg can.pdf, daterad idag
-#   make VERSION=v2      detsamma, med versionen på titelsidan
-#   make clean           ta bort allt bygget skriver
+#   make                 build both editions
+#   make sv              build sv/can-sv.pdf only
+#   make en              build en/can-en.pdf only
+#   make VERSION=v2      any of the above, with the version on the title page
+#   make clean           remove everything the two builds write
 #
-# Boken läser ingenting utanför book/: figurerna ritas i TikZ i figures/, och koden i texten är
-# en satt kopia av kursmaterialets, så en ändring i en föreläsning når boken först när
-# motsvarande .tex-fil ändras.
-
-ROOT    := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-BUILD   := $(ROOT)/build
+# Each edition has a Makefile of its own and is built the same way; this one only passes the work
+# on, so that `make` at the root still builds the book the way it did when there was only one.
 VERSION ?=
-LATEX   := lualatex -interaction=nonstopmode -halt-on-error -file-line-error \
-           -output-directory=$(BUILD)
-BOOKTEX := $(LATEX) -jobname=book '\def\bookversion{$(VERSION)}\input{book.tex}'
 
-SOURCES := book.tex canbook.sty canbook.lua \
-           $(wildcard front/*.tex chapters/*/*.tex back/*/*.tex figures/*.tex)
+.PHONY: all sv en clean
 
-.PHONY: all clean FORCE
+all: sv en
 
-all: can.pdf
-
-# Versionen bygget senast gjordes för. Filen skrivs om bara när VERSION ändras, så att en ny
-# version - eller ingen efter en - bygger om titelsidan och ingenting annat gör det.
-$(BUILD)/version: FORCE
-	@mkdir -p $(BUILD)
-	@echo '$(VERSION)' | cmp -s - $@ || echo '$(VERSION)' > $@
-
-can.pdf: $(SOURCES) $(BUILD)/version
-	@mkdir -p $(BUILD)
-	cd $(ROOT) && $(BOOKTEX) >/dev/null || (tail -40 $(BUILD)/book.log; exit 1)
-	cd $(ROOT) && $(BOOKTEX) >/dev/null || (tail -40 $(BUILD)/book.log; exit 1)
-	@! grep -q "There were undefined references" $(BUILD)/book.log || \
-	    (echo "error: odefinierade referenser; se $(BUILD)/book.log"; exit 1)
-	cp $(BUILD)/book.pdf $@
+sv en:
+	$(MAKE) -C $@ VERSION=$(VERSION)
 
 clean:
-	rm -rf $(BUILD) can.pdf
+	$(MAKE) -C sv clean
+	$(MAKE) -C en clean

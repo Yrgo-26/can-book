@@ -1,0 +1,27 @@
+% The bus as a wired AND: one dominant node is enough.
+\begin{tikzpicture}[
+  nod/.style={draw=rule, fill=white, rounded corners=2pt, inner sep=4pt,
+              font=\scriptsize, minimum width=21mm, minimum height=6.5mm, align=center}]
+
+  % The bus line.
+  \draw[line width=1.1pt, ink] (-0.55,0) -- (6.55,0);
+  \node[font=\scriptsize\bfseries, ink, anchor=west] at (6.7,0) {bus};
+
+  % Pull-up resistor: the bus rests recessive.
+  \draw[line width=0.5pt, recessive] (-0.55,0) -- (-0.55,0.85);
+  \node[font=\tiny, recessive, anchor=south, align=center] at (-0.55,0.88)
+    {pull-up\\[-0.3ex] to \rec};
+
+  % Three nodes.
+  \foreach \x/\txt/\col in {%
+    0.8/{drives \rec}/recessive,
+    3.0/{drives \dom}/dominant,
+    5.2/{does not drive}/muted} {
+    \node[nod] (N\x) at (\x,-1.35) {\txt};
+    \draw[line width=0.6pt, \col] (\x,-1.02) -- (\x,0);
+    \fill[\col] (\x,0) circle (1.2pt);
+  }
+
+  % The result.
+  \node[font=\small, anchor=south] at (3.0,0.28) {the bus is \dom};
+\end{tikzpicture}

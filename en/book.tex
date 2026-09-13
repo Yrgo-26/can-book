@@ -1,0 +1,29 @@
+% CAN - the bus, the frame and the controller.
+%
+% The English edition of "CAN - bussen, framen och kontrollern", which is in ../sv and matches this
+% one chapter for chapter and label for label. Built with LuaLaTeX; see the Makefile. The design is
+% in canbook.sty, the front matter in front/, one chapter per directory in chapters/, and the
+% answers to the exercises in back/answers/.
+\documentclass[10pt, twoside, openright]{book}
+\usepackage{canbook}
+
+\begin{document}
+
+\frontmatter
+\input{front/title}
+\tableofcontents
+\input{front/preface}
+
+\mainmatter
+\input{chapters/01/chapter}
+\input{chapters/02/chapter}
+\input{chapters/03/chapter}
+\input{chapters/04/chapter}
+\input{chapters/05/chapter}
+\input{chapters/06/chapter}
+\input{chapters/07/chapter}
+
+\appendix
+\input{back/answers/chapter}
+
+\end{document}

@@ -1,0 +1,214 @@
+\chapter{The simplified controller}
+\label{ch:kursen}
+
+{\large\itshape What a teaching controller implements, and what it deliberately leaves out.\par}
+
+\begin{chapterbox}{In this chapter}
+\begin{itemize}
+  \item The blocks a simplified CAN controller is made of.
+  \item Which parts of \kapref{ch:buss}--\kapref{ch:fel} are included, and which are not.
+  \item Why polling software cannot talk to the controller directly.
+  \item The register layer that makes it reachable, and the three limitations that reach all the
+    way up into the code.
+\end{itemize}
+\end{chapterbox}
+
+The six preceding chapters describe CAN as the standard defines it. This chapter describes the
+controller that is actually built in teaching: what it does of all that, and what it leaves out.
+
+The chapter faces both ways. If you build the controller, the list below is the requirements
+specification. If you write the driver, it is instead the list of what you must not count on.
+
+\section{The blocks}
+
+\bookfigure{controller_blocks}{The simplified controller's blocks, and the layer that makes it
+reachable from a processor.}{fig:blocks}
+
+\begin{booktable}{@{}lL@{}}
+\thead{Block} & \thead{Responsibility} \\ \midrule
+Bit timer & Counts ticks per bit, pulses at the sample point and at the end of the bit period
+  (\kapref{ch:tajming}). \\
+CRC-15 & A bit-serial engine that both computes and checks (\kapref{ch:stuffing}). \\
+Transmit shift register & Serialises MSB first and inserts stuff bits. \\
+Receive shift register & Deserialises and removes stuff bits; reports stuff errors. \\
+Controller & The state machine that sequences the frame's fields and handles arbitration. \\
+Synchroniser & Two flip-flops on every asynchronous input, so that the bus and reset can be read
+  safely. \\
+\end{booktable}
+
+On top of those sit two more blocks, which have nothing to do with CAN but with making the
+controller \emph{reachable}:
+
+\begin{booktable}{@{}lL@{}}
+\thead{Block} & \thead{Responsibility} \\ \midrule
+Register bank & Turns the controller's single-cycle pulses into sticky, pollable registers. \\
+Serial bridge & Makes the registers readable and writable from outside, over a serial bus. \\
+\end{booktable}
+
+\section{What is included}
+
+The controller implements the frame's sequence in full: SOF, the arbitration field with identifier
+and RTR, the control field with IDE, r0 and DLC, the data field, CRC-15 with delimiter, ACK slot
+with delimiter, and a seven-bit EOF.
+
+It also implements:
+
+\begin{itemize}
+  \item \textbf{Bit stuffing in both directions}, with the stuffing state kept alive across field
+    boundaries.
+  \item \textbf{CRC-15}, with the same engine on the transmit and receive sides.
+  \item \textbf{Arbitration}, bit by bit across the arbitration field.
+  \item \textbf{Open drain}: the node drives only when it should, and the bus is dominant if anyone
+    pulls it down.
+  \item \textbf{Stuff error detection} and \textbf{CRC checking} on the receive side.
+\end{itemize}
+
+That is enough for two such nodes to exchange real CAN frames on a real bus, and enough for a
+commercial bus analyser to decode them.
+
+\section{What is not included}
+
+\begin{booktable}{@{}lL@{}}
+\thead{Missing} & \thead{Consequence} \\ \midrule
+Error frames & An error does not abort the transfer for the other nodes. \\
+Error counters & No error passive, no bus off (\kapref{ch:fel}). \\
+Automatic retransmission & A frame that went wrong is not resent by the hardware. \\
+ACK readback & The transmitter never learns whether anyone acknowledged. \\
+Reception while transmitting & A node that loses arbitration does not receive the frame that won. \\
+Receive queue & The controller holds exactly one received frame. \\
+Filtering & Every received frame is passed on; filtering is done in software. \\
+Extended identifiers & 11 bits only. \\
+Bit error detection outside arbitration & The transmitter reads the bus back only during the arbitration field. \\
+\end{booktable}
+
+Each of them is a deliberate choice. Together they are the difference between a design that can be
+built and verified during a course, and one that cannot.
+
+\section{Why a register layer is needed}
+
+The controller is built for a caller in the same clock domain. It signals with pulses that are
+\textbf{one clock cycle} long --- 20~ns at 50~MHz.
+
+A processor polling over a serial bus sees the system a few tens of microseconds at a time at best.
+A 20~ns pulse is therefore gone thousands of cycles before the next poll comes.
+
+\textbf{The register bank solves that by turning pulses into levels.} A pulse sets a bit, and the
+bit stays set until the software explicitly clears it:
+
+\begin{booktable}{@{}lll@{}}
+\thead{Status bit} & \thead{Set by} & \thead{Cleared by} \\ \midrule
+TX done & a completed transmission & an accepted transmit trigger \\
+RX valid & a received frame & an acknowledgement from the software \\
+Error & a rising edge on the error level & an explicit clear \\
+\end{booktable}
+
+That pattern --- \emph{sticky bit, explicit clear} --- is the whole point of the layer, and it is
+also the most common source of bugs in the software above it. Forget the clear and the bit stays set
+forever, and the driver reads the same frame in an endless loop.
+
+\begin{aside}
+\note The register bank does not \emph{hide} the controller's limitations, it \emph{passes them on}.
+That is a design choice worth noticing: a layer that buffered received frames would have looked
+helpful and made the system's real behaviour impossible to reason about.
+\end{aside}
+
+\section{The three limitations that reach all the way up}
+
+Three of the simplifications above are not merely internal. They show in the software, and whoever
+writes the driver has to handle them rather than be surprised by them.
+
+\subsection{A lost arbitration looks like a successful transmission}
+
+The controller signals ``the transmission is over'' in both cases. The bit means \textbf{the port is
+free again}, not \emph{the frame got through}.
+
+That it behaves this way is deliberate, and it is in fact the fix for a real bug: if it signalled
+only on a successful transmission, the bit would be stuck after every lost arbitration, and the
+node could not send again until it was reset by hand. On a two-node bus, that is normal
+operation.
+
+The consequence for the software is a polling loop in two steps:
+
+\begin{console}
+wait for "port is free"   -> the transmit attempt is over
+read the error flag       -> did it go well or not?
+\end{console}
+
+Without the second step there is no way to know whether the frame should be resent.
+
+\subsection{One bit for four causes}
+
+Lost arbitration, stuff error, failed CRC and received remote frame all give the same single error
+flag. The software can see \emph{that} something went wrong, never \emph{what}.
+
+Retry logic that treats a lost arbitration differently from a broken CRC therefore cannot be written
+against this interface. The right handling is to know about the limitation and treat all four
+alike --- not to guess the cause from the context.
+
+\subsection{No buffering on the receive side}
+
+The controller holds one frame. If the next one arrives before the previous one has been
+acknowledged, it is overwritten, and the newest wins.
+
+That is documented and deliberate. A real controller has a receive queue; this one does not, and
+the software has to poll often enough. At some traffic intensity that is not enough however often it
+polls, and frames are then dropped --- which is the hardware's limitation and not the software's
+bug.
+
+\section{What a real controller would add}
+
+For completeness, and as the answer to the question ``how far is there left to go?'':
+
+\begin{itemize}
+  \item Error frames, error counters and bus off (\kapref{ch:fel}).
+  \item Automatic retransmission after errors.
+  \item Receive filters in hardware, so that uninteresting frames never reach the software.
+  \item A receive queue with several slots.
+  \item Several transmit buffers with priorities among them.
+  \item Extended identifiers, and with them CAN 2.0B.
+  \item Readback of the whole frame, and with it real bit error detection.
+\end{itemize}
+
+The list is long, but notice what is \emph{not} on it: framing, stuffing, CRC, arbitration and bit
+timing. The hard part of CAN is already done.
+
+\section*{Exercises}
+
+\exercise{What is missing}{Reasoning}
+\label{ex:7:1}
+For each of the following scenarios: what does a complete CAN controller do, and what does the
+simplified one do?
+\begin{enumerate}[a)]
+  \item A frame loses arbitration.
+  \item A received frame has the wrong checksum.
+  \item No node acknowledges a transmitted frame.
+  \item Two frames are received in quick succession.
+\end{enumerate}
+
+\exercise{Sticky bits}{Reasoning}
+\label{ex:7:2}
+The controller pulses for one clock cycle; the software polls every fortieth microsecond.
+\begin{enumerate}[a)]
+  \item How many 50~MHz clock cycles pass between two polls?
+  \item What would the software see if the status bit mirrored the pulse directly?
+  \item Why must the bit be cleared by a write instead of automatically on read?
+\end{enumerate}
+
+\exercise{Two steps}{Reasoning}
+\label{ex:7:3}
+A driver waits for the transmission to complete and then returns ``it went well''.
+\begin{enumerate}[a)]
+  \item What mistake does it make?
+  \item What must it do instead?
+  \item Which four causes can lie behind a set error flag?
+\end{enumerate}
+
+\exercise{The boundary}{Reasoning}
+\label{ex:7:4}
+The register bank passes the controller's limitations on instead of hiding them.
+\begin{enumerate}[a)]
+  \item Give an example of how it \emph{could} hide one of them.
+  \item What would that have cost whoever debugs the system?
+  \item What principle does this say something about, more generally, when designing an interface
+    between hardware and software?
+\end{enumerate}

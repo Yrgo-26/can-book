@@ -1,0 +1,64 @@
+% Half-title, title page and colophon.
+\providecommand{\bookversion}{}
+\newcommand{\bookdate}{\number\day\space\ifcase\month\or January\or February\or March\or April\or
+  May\or June\or July\or August\or September\or October\or November\or December\fi\space
+  \number\year}
+\newcommand{\bookedition}{\ifx\bookversion\empty\else\bookversion\,·\,\fi\bookdate}
+
+\thispagestyle{empty}
+\vspace*{2.2in}
+\begin{flushright}
+  {\Large\bfseries CAN}
+\end{flushright}
+\cleardoublepage
+
+\thispagestyle{empty}
+\vspace*{1.1in}
+\begin{flushleft}
+  {\color{accent}\rule{0.9in}{2.5pt}}\par\vspace{1.4ex}
+  {\fontsize{32}{38}\selectfont\bfseries CAN\par}
+  \vspace{2.2ex}
+  {\Large\itshape The bus, the frame and the controller\par}
+  \vspace{1.2in}
+  {\large Erik Pihl\par}
+  \vfill
+  \vspace{0.6ex}
+  {\small\color{muted} \bookedition\par}
+\end{flushleft}
+\newpage
+
+\thispagestyle{empty}
+\vspace*{\fill}
+{\small
+\noindent\textit{CAN - the bus, the frame and the controller}\\
+A short book about CAN, written for whoever is about to build a CAN node: either the controller
+in hardware or the driver in software.
+
+\medskip
+\noindent The book describes CAN as a protocol: the bus, the frame, bit stuffing, the checksum,
+arbitration and bit timing. The last chapter describes the simplified controller that is built and
+driven in teaching, what it implements of all that comes before, and what it deliberately leaves
+out.
+
+\medskip
+\noindent This is the English edition of
+\foreignlanguage{swedish}{\textit{CAN - bussen, framen och kontrollern}}. The text is in English,
+and so are all the code, all the register names and all the signal names, exactly as in the code
+and in the shared specifications.
+
+\medskip
+\noindent Text and figures: Erik Pihl.
+
+\medskip
+\noindent The book's text and figures, like the course material it is typeset from, are licensed
+under Creative Commons Attribution 4.0 International (CC BY 4.0). You may copy, distribute and
+adapt the material for any purpose, commercial ones included, provided that you credit the author
+and state the licence. The licence is at \url{https://creativecommons.org/licenses/by/4.0/}.
+
+\medskip
+\noindent Typeset with Lua\LaTeX\ in TeX Gyre Pagella and DejaVu Sans Mono.
+
+\medskip
+\noindent\textcolor{muted}{This edition: \bookedition.}
+\par}
+\cleardoublepage

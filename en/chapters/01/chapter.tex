@@ -1,0 +1,191 @@
+\chapter{The bus}
+\label{ch:buss}
+
+{\large\itshape Two wires, many nodes, and an asymmetry that decides everything.\par}
+
+\begin{chapterbox}{In this chapter}
+\begin{itemize}
+  \item Why point-to-point stops working as a system grows.
+  \item The shared bus, and what it costs.
+  \item Dominant and recessive bits, and the logical AND the bus performs.
+  \item Differential signalling and termination, as far as someone building a node needs them.
+\end{itemize}
+\end{chapterbox}
+
+\section{The problem}
+
+An embedded system with five units that all need to talk to each other needs ten connections if
+every pair is wired together directly. With ten units it is forty-five. The formula is $n(n-1)/2$,
+and it is relentless: the wiring grows quadratically while the benefit grows linearly.
+
+In a car that is not a theoretical objection. Engine management, ABS, instrument cluster,
+gearbox, airbags, climate control --- and every connection is copper that weighs, costs, takes up
+space and can break.
+
+\textbf{The solution is to stop wiring units to each other, and wire them in instead.} A single
+bus, shared by every node:
+
+\bookfigure{bus_topology}{Point-to-point versus a shared bus. Five nodes need ten connections in
+the case on the left and one bus in the case on the right.}{fig:topology}
+
+What was $n(n-1)/2$ connections becomes $n$ attachments to one common line. The price is that the
+bus is now a shared resource, and shared resources have to be allocated.
+
+\section{What a shared bus costs}
+
+Three problems appear the moment two nodes share a wire, and the whole design of CAN is the answer
+to them:
+
+\begin{booktable}{@{}lL@{}}
+\thead{Problem} & \thead{CAN's answer} \\ \midrule
+Everyone hears everything, so a receiver must know what concerns it & The identifier describes
+  the \emph{content}, and every node filters for itself (\kapref{ch:frameformat}) \\
+Two nodes can start sending at the same time & Non-destructive arbitration (\kapref{ch:arbitrering}) \\
+A disturbance on the wire hits everyone & Bit stuffing and CRC-15 (\kapref{ch:stuffing}), plus
+  error handling (\kapref{ch:fel}) \\
+\end{booktable}
+
+Notice what is \emph{not} in the table: addressing. CAN has no destination address. That is not a
+simplification but a design choice, and \kapref{ch:frameformat} goes through why.
+
+\section{Dominant and recessive}
+
+Here is the one idea you need to have entirely clear for the rest of CAN to make sense.
+
+A CAN bus has two states, and they are \textbf{not} symmetric:
+
+\begin{narrowtable}{@{}lll@{}}
+\thead{State} & \thead{Logic level} & \thead{Wins?} \\ \midrule
+\dom{} & 0 & Yes \\
+\rec{} & 1 & No \\
+\end{narrowtable}
+
+The rule is simple and has consequences all through the book:
+
+\begin{aside}
+\textbf{The bus is dominant if \emph{at least one} node drives it dominant. It is recessive only if
+\emph{every} node lets go of it.}
+\end{aside}
+
+Electrically it is an open drain with a pull-up resistor: a node can only \emph{pull} the line
+down, never drive it up. If everyone lets go, it is pulled up on its own.
+
+Logically, then, the bus is an AND gate over the outputs of every node:
+
+\bookfigure{wired_and}{The bus as a wired AND. Three nodes, and the bus level as a function of what
+they drive: a single dominant node is enough to make the bus dominant.}{fig:wiredand}
+
+\subsection{Why the asymmetry is needed}
+
+Suppose instead a symmetric bus, where a one and a zero that meet give an undefined level in
+between. Then a collision is \emph{destruction}: both frames become unusable, and both nodes have to
+detect it, wait for different lengths of time and try again. That is how Ethernet did it, and it is
+why Ethernet needed random backoff.
+
+With the asymmetry, a collision becomes a \emph{comparison} instead. The node that sends recessive
+and reads back dominant immediately knows two things: that someone else is sending too, and that the
+other one has priority. It withdraws, silently, in the middle of the frame --- and the winning node's
+frame continues without losing a single bit interval.
+
+This is called \textbf{non-destructive arbitration}, and it is CAN's most elegant property.
+\Kapref{ch:arbitrering} works through it bit by bit.
+
+\subsection{Reading back what you send}
+
+A precondition that is easy to overlook: \textbf{every transmitting node reads the bus continuously
+while it sends.} That is how it detects that it has lost arbitration, and it is also how it detects
+that the bus is not doing what it was told.
+
+The simplified controller does this during the arbitration field. A complete CAN controller does it
+during the \emph{whole} frame, and reports a \emph{bit error} as soon as what it reads back differs
+from what it sent. The difference is described in \kapref{ch:kursen}.
+
+\section{The wires}
+
+CAN is \textbf{differential}: the signal is carried as a voltage difference between two conductors,
+\code{CAN_H} and \code{CAN_L}, twisted around each other.
+
+\begin{narrowtable}{@{}lll@{}}
+\thead{State} & \thead{\code{CAN_H}} & \thead{\code{CAN_L}} \\ \midrule
+\rec{} & 2.5 V & 2.5 V \\
+\dom{} & 3.5 V & 1.5 V \\
+\end{narrowtable}
+
+In the recessive state nobody drives, and both conductors rest at the same level --- the difference
+is zero. In the dominant state the transmitting node drives them apart, to about two volts.
+
+The point of differential signalling is noise immunity. A disturbance that hits the cable hits both
+conductors about equally, and since the receiver measures only the \emph{difference} it takes no
+notice of it. The twisting is what makes the disturbance really hit both equally.
+
+\subsection{Termination}
+
+A CAN bus is terminated with \textbf{120~\textohm{} at each end}, not in the middle, and never more
+than two resistors no matter how many nodes are on the bus.
+
+The resistors match the cable's characteristic impedance, so that a signal reaching the end is
+absorbed instead of reflecting back. A badly terminated bus often works anyway on a short cable at
+low speed, and stops working just when you have started to trust it --- which makes it one of the
+nastier faults.
+
+\begin{aside}
+\note[At the bench] A quick way to check the termination: measure the resistance across
+\code{CAN_H} and \code{CAN_L} with the bus unpowered. Two 120~\textohm{} in parallel should give
+about 60~\textohm. If you get 120, a resistor is missing; if you get 40, there are three.
+\end{aside}
+
+\section{Speed and length}
+
+CAN's bit rate and the length of the bus are linked, and the reason is arbitration: during the
+arbitration field, a bit must have time to reach the farthest node on the bus \emph{and} come back
+before the bit ends, or the nodes cannot agree on who won.
+
+\begin{narrowtable}{@{}ll@{}}
+\thead{Bit rate} & \thead{Approximate maximum length} \\ \midrule
+1 Mbit/s & 40 m \\
+500 kbit/s & 100 m \\
+125 kbit/s & 500 m \\
+\end{narrowtable}
+
+The simplified controller runs at \textbf{1 Mbit/s}, and the bus is a cable on the lab bench. The
+limit is therefore never anywhere near becoming a problem --- but the relationship is worth knowing,
+because it explains why vehicle systems often run slower than they could.
+
+\section*{Exercises}
+
+\exercise{Wiring}{Calculation}
+\label{ex:1:1}
+\begin{enumerate}[a)]
+  \item How many connections are needed to wire eight units together point-to-point?
+  \item How many attachments are needed if they share a bus instead?
+  \item At what number of units does point-to-point need twice as many connections as the bus has
+    attachments?
+\end{enumerate}
+
+\exercise{The bus level}{Reasoning}
+\label{ex:1:2}
+Four nodes are on a bus. During a certain bit interval, node A drives recessive, node B dominant,
+node C recessive, and node D does not drive at all.
+\begin{enumerate}[a)]
+  \item What level is the bus at?
+  \item Which of the nodes read back something other than what they sent?
+  \item What conclusion do they draw from that?
+\end{enumerate}
+
+\exercise{Termination}{Reasoning}
+\label{ex:1:3}
+A group measures 40~\textohm{} across an unpowered bus.
+\begin{enumerate}[a)]
+  \item What is wrong?
+  \item The bus works anyway on the lab bench. Why, and when would it stop doing so?
+\end{enumerate}
+
+\exercise{The asymmetry}{Reasoning}
+\label{ex:1:4}
+Imagine a hypothetical bus where recessive won over dominant instead --- that is, where the bus is
+recessive if at least one node drives it recessive.
+\begin{enumerate}[a)]
+  \item Would arbitration still work?
+  \item Which identifier value would then have the highest priority?
+  \item Why did CAN choose the order it did? Think about what the bus does when nobody is sending.
+\end{enumerate}

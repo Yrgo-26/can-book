@@ -1,0 +1,185 @@
+\chapter{Error handling}
+\label{ch:fel}
+
+{\large\itshape Five kinds of error, one signal, and a node that switches itself off.\par}
+
+\begin{chapterbox}{In this chapter}
+\begin{itemize}
+  \item The five errors a CAN node can detect, and who detects what.
+  \item The error frame: how a node aborts a transfer in progress.
+  \item The error counters, and the three states a node can be in.
+  \item Bus-off: when a node disconnects itself, and why that is the right behaviour.
+\end{itemize}
+\end{chapterbox}
+
+\section{Five kinds of error}
+
+CAN detects errors in five ways. Three of them we have already covered under other names:
+
+\begin{booktable}{@{}lLl@{}}
+\thead{Error} & \thead{What it is} & \thead{Who sees it} \\ \midrule
+Bit error & A transmitting node reads back something other than what it sent & The transmitter \\
+Stuff error & Six equal bits in a row where the rule of five demands an edge & Everyone \\
+CRC error & The received checksum does not match & Receivers \\
+Form error & A field that must be recessive is not & Everyone \\
+Acknowledgement error & Nobody pulled down the ACK slot & The transmitter \\
+\end{booktable}
+
+Together they give a residual error probability usually quoted at around $10^{-11}$ of the errors
+that occur --- roughly one undetected error per thousand years on a heavily loaded bus. That is not
+luck but the result of five independent mechanisms overlapping.
+
+\subsection{Bit errors, and the exceptions}
+
+A transmitting node constantly compares what it sends with what is on the bus. If they differ it is
+a bit error --- \emph{except} in two places where a difference is perfectly normal:
+
+\begin{itemize}
+  \item \textbf{During the arbitration field.} Recessive out and dominant in means lost
+    arbitration, not an error (\kapref{ch:arbitrering}).
+  \item \textbf{In the ACK slot.} The transmitter sends recessive and \emph{hopes} for dominant
+    (\kapref{ch:frameformat}).
+\end{itemize}
+
+Telling those two cases apart from a real bit error is one of the things that make a CAN controller
+more involved than it looks.
+
+\section{The error frame}
+
+When a node detects an error it does not say so afterwards. It aborts the frame \textbf{while it is
+in progress}, by sending an \textbf{error frame}: six dominant bits in a row.
+
+Six dominant bits are impossible in a correct frame --- the rule of five sees to it that there are
+never more than five --- so the pattern cannot be mistaken for data. Every other node on the bus
+sees it, understands that the frame is broken, and discards it.
+
+And since every node sees the error, several of them will send their own error flag in turn. The
+result is a run of dominant bits, followed by a delimiter of eight recessive ones.
+
+Two things follow:
+
+\textbf{Every node discards the frame, not just the one that detected the error.} The bus is kept
+consistent: either everyone receives the frame, or nobody does. That is a stronger guarantee than a
+home-grown protocol normally attempts.
+
+\textbf{The transmitter resends automatically.} The controller does it by itself, without the
+software being involved. A driver that sends a frame and learns that it went well may therefore have
+had it resent several times without noticing.
+
+\section{The error counters}
+
+Here comes the part of CAN that is least obvious and most carefully thought out.
+
+A node that runs into errors should speak up. A node that is \emph{broken} should stop speaking up
+--- otherwise it ruins the bus for everyone else by sending error frames non-stop.
+
+CAN tells them apart with two counters in every node:
+
+\begin{itemize}
+  \item \textbf{TEC} --- transmit error counter, errors while the node was sending.
+  \item \textbf{REC} --- receive error counter, errors while it was receiving.
+\end{itemize}
+
+The rules in brief: an error increases the counter by 8 (transmitter side) or 1 (receiver side),
+and a successful transfer decreases it by 1.
+
+\textbf{The asymmetry is the whole point.} A node that really is broken is involved in every error
+and climbs fast. A node that just happens to be on a noisy bus climbs slowly and has time to work it
+off. So the counters do not measure ``how many errors have happened'' but ``how likely is it that
+the error is mine''.
+
+\subsection{The three states}
+
+\bookfigure{error_states}{A node's three error states and the transitions between them.}{fig:errorstates}
+
+\begin{booktable}{@{}llL@{}}
+\thead{State} & \thead{Condition} & \thead{Behaviour} \\ \midrule
+Error active & TEC and REC $\leq$ 127 & Normal operation; sends \emph{active} error flags (dominant) \\
+Error passive & Either counter $>$ 127 & Sends \emph{passive} error flags (recessive) and waits extra between transmissions \\
+Bus off & TEC $>$ 255 & Sends nothing at all \\
+\end{booktable}
+
+The transition to \emph{error passive} is the interesting one. A passive error flag is recessive,
+which means it does not disturb anyone else. The node may still take part, it may still report,
+but it can no longer pull the bus down on everyone's behalf.
+
+\subsection{Bus off}
+
+With TEC above 255 the node disconnects itself. It does not send, does not acknowledge, does not
+disturb.
+
+It is the protocol's last line of defence, and it is worth dwelling on how unusual the behaviour
+is: a node that concludes that it is itself most likely the broken part, and that draws that
+conclusion without anyone telling it.
+
+A node in bus off can be brought back --- typically after seeing the bus idle a certain number of
+times, or after the software reinitialises the controller. That this recovery exists is deliberate
+too: the fault may have been a loose connector that is now seated.
+
+\begin{aside}
+\note[For the driver writer] Bus off is the one state the software cannot ignore. Everything else
+the controller handles by itself --- retransmissions, error frames, counters --- but a node in bus
+off never comes back on its own if the design requires a reinitialisation. It is one of the few
+places where error handling reaches all the way up into the application.
+\end{aside}
+
+\section{What the software sees}
+
+Notice how little of all this reaches the software in a complete controller:
+
+\begin{itemize}
+  \item Errors are detected in hardware.
+  \item Error frames are sent in hardware.
+  \item Retransmission happens in hardware.
+  \item The counters are updated in hardware.
+\end{itemize}
+
+The software gets a status bit, perhaps an error code, and the ability to read the counters. That
+is an enormous amount of work done on its behalf --- compare with ACK, timeout, retry and duplicate
+handling in a home-grown protocol, which are the same problems solved in software, worse.
+
+\begin{simplification}
+\note[Simplification] The simplified controller in \kapref{ch:kursen} implements \emph{nothing} of
+this chapter except stuff error detection and the CRC check. It sends no error frames, has no error
+counters, knows nothing of error passive or bus off, and never resends automatically. It only
+signals that something went wrong, with a single bit, and leaves the rest to the software.
+\end{simplification}
+
+\section*{Exercises}
+
+\exercise{Who sees the error?}{Reasoning}
+\label{ex:6:1}
+For each of the following: what kind of error is it, and who detects it?
+\begin{enumerate}[a)]
+  \item A disturbance flips a bit in the data field.
+  \item A disturbance flips a bit in a field that must be recessive.
+  \item The transmitter is alone on the bus.
+  \item Seven equal bits in a row go by in the arbitration field.
+\end{enumerate}
+
+\exercise{The counters}{Calculation}
+\label{ex:6:2}
+A node starts at TEC 0 and runs into eight transmit errors in a row, followed by twenty successful
+transmissions.
+\begin{enumerate}[a)]
+  \item What is TEC after the errors?
+  \item After the successful transmissions?
+  \item Which state is the node in at each of those points?
+\end{enumerate}
+
+\exercise{The asymmetry}{Reasoning}
+\label{ex:6:3}
+An error increases the transmitter's counter by 8 but the receiver's by 1.
+\begin{enumerate}[a)]
+  \item Why are the increases different?
+  \item A node with a broken transmitter and a node on a noisy bus look alike at first. What tells
+    them apart after a while?
+\end{enumerate}
+
+\exercise{Bus off}{Reasoning}
+\label{ex:6:4}
+\begin{enumerate}[a)]
+  \item Why does a node disconnect itself instead of carrying on reporting errors?
+  \item What would have happened to the bus if it did not?
+  \item Why is there a way back from bus off?
+\end{enumerate}

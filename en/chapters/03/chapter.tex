@@ -1,0 +1,201 @@
+\chapter{Bit stuffing and CRC-15}
+\label{ch:stuffing}
+
+{\large\itshape The two mechanisms that let a frame survive a noisy bus.\par}
+
+\begin{chapterbox}{In this chapter}
+\begin{itemize}
+  \item Why a long run of equal bits is a problem, and the rule of five that solves it.
+  \item Which fields are stuffed, and which are not.
+  \item CRC-15: the polynomial, the bit-serial engine, and an example worked by hand.
+  \item Why the same engine both computes and checks.
+\end{itemize}
+\end{chapterbox}
+
+\section{The problem with equal bits}
+
+CAN nodes have no shared clock. Every node has its own oscillator, and they never run at exactly
+the same speed. A receiver keeps in step by watching the \emph{edges} in the bit stream: every time
+the signal changes level, it knows where a bit boundary was, and can adjust its own counter
+(\kapref{ch:tajming}).
+
+If no edges come, the receiver drifts. After enough equal bits in a row it samples the wrong bit,
+and the frame is lost.
+
+\textbf{The solution is to make the edges mandatory.} After five equal bits in a row, the
+transmitter inserts a \textbf{stuff bit} of the opposite value, which the receiver recognises and
+discards.
+
+\section{The rule of five}
+
+The rule is short: \textbf{after five equal bits in a row, a bit of the opposite value is sent},
+whatever comes next.
+
+An example, with the inserted bits marked:
+
+\begin{console}
+in:  1 1 1 1 1 0 0 0 0 0 1
+out: 1 1 1 1 1 0 0 0 0 0 1 0 1
+               ^         ^
+               stuff     stuff
+\end{console}
+
+There are two details here that are easy to get wrong, and both are classic bugs:
+
+\textbf{The stuff bit counts itself.} After a stuff bit has been inserted, the count starts again
+with the stuff bit as the first bit of the new run. It is an entirely ordinary bit in the stream,
+for everyone except whoever has to remove it again.
+
+\textbf{The rule applies to the stream, not the field.} Five equal bits spanning the boundary
+between the identifier and the DLC trigger a stuff bit just as five within one field do. An
+implementation that resets the counter at every field change almost always works, and breaks
+exactly when two fields happen to end and begin with the same bit value.
+
+\subsection{Which fields are stuffed}
+
+Stuffing applies from SOF up to and including the CRC field. After that it \textbf{stops}:
+
+\begin{narrowtable}{@{}ll@{}}
+\thead{Field} & \thead{Stuffed?} \\ \midrule
+SOF, arbitration, control, data, CRC & Yes \\
+CRC delimiter, ACK, EOF, intermission & No \\
+\end{narrowtable}
+
+That the end is not stuffed is what makes EOF usable as an end marker. Seven recessive bits in a
+row cannot occur in the stuffed part --- there, five equal is the most that gets through --- so a
+receiver that sees seven recessive knows for certain that the frame is over.
+
+\subsection{Stuff errors}
+
+The receiver counts the same way as the transmitter. After five equal bits, the next bit
+\emph{must} be the opposite one. If it is not, something is wrong, and the receiver reports a
+\textbf{stuff error}.
+
+It is one of CAN's cheapest means of error detection: it costs no extra information at all, only a
+counter at each end.
+
+\begin{aside}
+\note[The cost] Stuffing makes the frame longer, and by how much depends on the data. A frame whose
+data bits alternate all the time gets no stuff bits at all; a frame full of zeros gets one every
+fifth bit. For the longest data frame the overhead is at most twenty-odd bits. That is also why a
+CAN frame's length cannot be predicted exactly from the DLC --- which in turn is why anyone
+calculating bus load calculates with the worst case.
+\end{aside}
+
+\section{CRC-15}
+
+The checksum is fifteen bits, computed over everything from SOF up to and including the data field
+--- that is, the \emph{real} bits, without stuff bits. Stuff bits are the transport's business and
+are not part of what is protected.
+
+\subsection{The polynomial}
+
+CAN uses
+
+\[ x^{15} + x^{14} + x^{10} + x^{8} + x^{7} + x^{4} + x^{3} + 1 \]
+
+which in binary form, the coefficients for $x^{14}$ down to $x^{0}$, becomes
+
+\begin{console}
+100010110011001
+\end{console}
+
+The polynomial is chosen to detect all single, double and triple errors, all error bursts up to
+15 bits, and the vast majority of longer ones. It is not a random constant.
+
+\subsection{The engine}
+
+The computation is a fifteen-bit shift register with feedback, and it takes one bit at a time:
+
+\begin{cppcode}
+// One bit into the CRC-15 engine. crc is 15 bits wide.
+const bool feedback{static_cast<bool>((crc >> 14U) & 1U) ^ bit};
+crc = static_cast<std::uint16_t>((crc << 1U) & 0x7FFFU);
+if (feedback)
+{
+    crc ^= 0x4599U;   // 100010110011001
+}
+\end{cppcode}
+
+Three lines: XOR the incoming bit with the register's top bit, shift the register one step, and
+XOR in the polynomial if the result of the first operation was one.
+
+\subsection{An example by hand}
+
+The sequence \code{10110010}, fed in bit by bit into a cleared register:
+
+\begin{narrowtable}{@{}llll@{}}
+\thead{Bit} & \thead{Value} & \thead{Register after} & \thead{Hex} \\ \midrule
+1 & 1 & \code{100010110011001} & \code{0x4599} \\
+2 & 0 & \code{100111010101011} & \code{0x4EAB} \\
+3 & 1 & \code{001110101010110} & \code{0x1D56} \\
+4 & 1 & \code{111111100110101} & \code{0x7F35} \\
+5 & 0 & \code{011101111110011} & \code{0x3BF3} \\
+6 & 0 & \code{111011111100110} & \code{0x77E6} \\
+7 & 1 & \code{110111111001100} & \code{0x6FCC} \\
+8 & 0 & \code{001101000000001} & \code{0x1A01} \\
+\end{narrowtable}
+
+The checksum is therefore \code{0x1A01}.
+
+\subsection{The same engine checks}
+
+This is where the elegance lies. The receiver has no separate checking function: it feeds the
+\emph{same} bits plus \emph{the received checksum} through the same engine.
+
+If everything is correct, the register reads \textbf{zero} once the last CRC bit has passed. If we
+feed in \code{10110010} followed by \code{001101000000001} from the example above, the final value
+is \code{0x0000}.
+
+That is a property of the construction, not a special case: appending the remainder to the dividend
+makes it divide evenly. Transmitter and receiver can therefore use exactly the same module, with no
+mode switch --- which is exactly what a hardware design wants.
+
+\begin{aside}
+\note[A detail that bites] The engine still has to be resettable. An aborted frame leaves garbage in
+the register, and the next frame that starts with a dirty register gets the wrong checksum from its
+first bit. The reset happens at the start of every frame.
+\end{aside}
+
+\subsection{What the CRC does not protect}
+
+The CRC covers SOF up to and including the data field. It therefore does \emph{not} cover the CRC
+delimiter, the ACK field or EOF. Errors in those are detected by the format rules instead: a
+delimiter that is not recessive is a form error (\kapref{ch:fel}).
+
+\section*{Exercises}
+
+\exercise{Stuff a stream}{Calculation}
+\label{ex:3:1}
+Stuff the following bit streams according to the rule of five, and mark the inserted bits.
+\begin{enumerate}[a)]
+  \item \code{0000011111}
+  \item \code{1111111111}
+  \item \code{0101010101}
+\end{enumerate}
+How many bits did each one become after stuffing?
+
+\exercise{Destuff}{Calculation}
+\label{ex:3:2}
+A receiver receives \code{111110000010}.
+\begin{enumerate}[a)]
+  \item Which bits are stuff bits?
+  \item What was the original bit stream?
+  \item Suppose instead that the receiver got \code{111111...}. What does it report, and after
+    which bit?
+\end{enumerate}
+
+\exercise{The CRC engine}{Calculation}
+\label{ex:3:3}
+Feed \code{1101} into a cleared CRC-15 register, one step at a time, and write down the register's
+value after each bit. Use the table in section 3.3 as a template.
+
+\exercise{Why zero?}{Reasoning}
+\label{ex:3:4}
+\begin{enumerate}[a)]
+  \item Why does the receiver's register read zero once both the data and the checksum have been fed
+    in?
+  \item What practical advantage does that give a hardware design?
+  \item A node by mistake feeds the \emph{stuff bits} into the CRC engine as well. What happens, and
+    who detects it?
+\end{enumerate}

@@ -7,10 +7,29 @@ det, och vad den medvetet låter bli.
 Boken är skriven för **båda hållen** av ett CAN-system: den som bygger kontrollern i hårdvara och
 den som skriver drivrutinen i mjukvara. Den nämner därför varken kurs eller klass.
 
-Brödtexten är på svenska, all kod och alla signalnamn på engelska.
+*The book is also available in English: [CAN - the bus, the frame and the controller](./en/can-en.pdf).
+See [`en/`](./en/README.md).*
 
-**[Läs boken (can.pdf)](./can.pdf)** --- den byggda PDF:en är incheckad i repot och går att läsa
-direkt på GitHub.
+---
+
+## Boken
+Boken finns i två språkupplagor med samma innehåll:
+* Svenska: **[CAN - bussen, framen och kontrollern (can-sv.pdf)](./sv/can-sv.pdf)**.
+* Engelska: **[CAN - the bus, the frame and the controller (can-en.pdf)](./en/can-en.pdf)**.
+
+De byggda PDF:erna är incheckade i repot och går att läsa direkt på GitHub.
+
+```text
+sv/    Svenska upplagan, can-sv.pdf
+en/    Engelska upplagan, can-en.pdf
+```
+
+Upplagorna är samma bok, kapitel för kapitel och etikett för etikett: sju kapitel och ett appendix
+med svaren. Varje upplaga har sina egna källor, figurer inräknade, så en rättelse i prosan eller en
+ändring i en figur behöver göras i båda.
+
+I båda upplagorna är all kod och alla signalnamn på engelska. Detaljerna står i upplagornas egna
+README: [`sv/`](./sv/README.md) och [`en/`](./en/README.md).
 
 ---
 
@@ -35,55 +54,34 @@ appendix A.
 ## Bygga
 
 ```bash
-make                 # bygger can.pdf
+make                 # bygger båda upplagorna
+make sv              # bara den svenska, sv/can-sv.pdf
+make en              # bara den engelska, en/can-en.pdf
 make VERSION=v2      # samma, med versionen på titelsidan
-make clean           # tar bort allt bygget skriver
+make clean           # tar bort allt byggena skriver
 ```
 
-Bygget kräver **LuaLaTeX** med TeX Gyre-typsnitten, DejaVu Sans Mono och paketen `babel`
-(svenska), `tcolorbox`, `listings`, `titlesec`, `booktabs` och `tikz`. På Ubuntu/WSL räcker:
+Varje upplaga har en egen Makefile och byggs på samma sätt; rotens Makefile skickar bara vidare
+arbetet.
+
+Bygget kräver **LuaLaTeX** med TeX Gyre-typsnitten, DejaVu Sans Mono och paketen `babel`,
+`tcolorbox`, `listings`, `titlesec`, `booktabs` och `tikz`. På Ubuntu/WSL räcker:
 
 ```bash
 sudo apt -y install texlive-luatex texlive-latex-extra texlive-fonts-extra texlive-lang-european
 ```
+
+`texlive-lang-european` behövs för båda upplagorna: den bär den svenska avstavningen, och den
+engelska upplagan har svenska som andraspråk för den svenska upplagans titel.
 
 Två pass körs alltid, det andra för innehållsförteckningen och referenserna. Bygget fallerar om
 någon referens är odefinierad.
 
 ---
 
-## Struktur
-
-```text
-book.tex          Dokumentets rot: vilka kapitel som ingår, i vilken ordning
-canbook.sty       All design - typsnitt, färger, rubriker, kodblock, övningar, svar
-canbook.lua       Hjälpfunktionen \code{} behöver för att sätta kod ordagrant
-front/            Titelsida och förord
-chapters/NN/      Ett kapitel per katalog
-back/answers/     Svaren på övningarna
-figures/          Figurerna, ritade i TikZ
-build/            Byggkatalog; skapas av make och versionshanteras inte
-```
-
-Boken läser ingenting utanför `book/`. Figurerna ritas i TikZ i samma färger och typsnitt som
-sidan, och koden i texten är en satt kopia --- en ändring i kursmaterialet når alltså boken först
-när motsvarande `.tex`-fil ändras.
-
----
-
-## Att lägga till ett kapitel
-1. Skapa `chapters/NN/chapter.tex` med `\chapter{...}` och ett `\label{ch:...}`.
-2. Lägg till `\input{chapters/NN/chapter}` i `book.tex`.
-3. Lägg övningarna sist i kapitlet, med `\exercise{Titel}{Sort}` och ett `\label{ex:NN:M}`.
-4. Lägg svaren i `back/answers/chapter.tex`, med `\solution{ex:NN:M}{Titel}`.
-
-Referenser mellan kapitel skrivs `\kapref{ch:...}`, aldrig med ett hårdkodat kapitelnummer.
-
----
-
 ## Ge ut en ny upplaga
 
-PDF:en är incheckad i repot, så den går att läsa direkt på GitHub. En skarp upplaga publiceras
+PDF:erna är incheckade i repot, så de går att läsa direkt på GitHub. En skarp upplaga publiceras
 dessutom som en release: pusha en versionstagg.
 
 ```bash
@@ -91,8 +89,8 @@ git tag v1.1.0
 git push origin v1.1.0
 ```
 
-[Book-arbetsflödet](./.github/workflows/book.yml) bygger då PDF:en med taggen på titelsidan och
-lägger upp den i en release med samma namn.
+[Book-arbetsflödet](./.github/workflows/book.yml) bygger då båda PDF:erna med taggen på titelsidan
+och lägger upp dem i en release med samma namn.
 
 Boken ska kunna användas i många år, så ingen sida i den nämner en klass, ett år eller ett datum;
 titelsidan visar versionen, och byggdatumet bara när ingen version anges.
@@ -114,8 +112,8 @@ inte här; se [Yrgo-26/programmable-logic](https://github.com/Yrgo-26/programmab
 ---
 
 ## Licens
-Bokens text och figurer, och PDF:en som byggs från dem, är licensierade under
-[CC BY 4.0](./LICENSE) – Erik Pihl. Det gäller även bokens byggfiler: `canbook.sty`,
-`canbook.lua` och `Makefile`.
+Bokens text och figurer, i båda upplagorna, och PDF:erna som byggs från dem, är licensierade under
+[CC BY 4.0](./LICENSE) – Erik Pihl. Det gäller även bokens byggfiler: `Makefile` i roten, och
+`canbook.sty`, `canbook.lua` och `Makefile` i `sv/` och `en/`.
 
 ---

@@ -12,7 +12,8 @@ permissions:
 
 # Define pipeline jobs.
 jobs:
-  # Build the PDF with the tag on its title page, and attach it to a release named after the tag.
+  # Build both editions with the tag on their title pages, and attach them to a release named
+  # after the tag.
   release:
     name: Build and release the book
     runs-on: ubuntu-latest
@@ -21,7 +22,8 @@ jobs:
         uses: actions/checkout@v4
       # TeX Live is not on the runner image, so the package lists have to be current. A failing
       # third-party repository must not stop the Ubuntu lists from being used.
-      # texlive-lang-european carries the Swedish hyphenation patterns babel asks for.
+      # texlive-lang-european carries the Swedish hyphenation patterns babel asks for, in the
+      # Swedish edition as the main language and in the English edition as a second one.
       - name: Install LuaLaTeX and fonts
         run: |
           sudo apt-get update || true
@@ -30,10 +32,25 @@ jobs:
                                   fonts-dejavu-core
       - name: Build
         run: make VERSION="${{ github.ref_name }}"
+      # A tag that is moved and pushed again overwrites its release instead of failing on it: the
+      # title and notes are rewritten, the PDFs replaced, and any asset an earlier build left
+      # behind that this build no longer produces (can.pdf, before the English edition) removed.
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
         run: |
-          gh release create "${{ github.ref_name }}" can.pdf \
-            --title "CAN - bussen, framen och kontrollern, ${{ github.ref_name }}" \
-            --notes "Boken byggd från ${{ github.sha }}."
+          title="CAN - bussen, framen och kontrollern, $TAG"
+          notes="Boken byggd från $GITHUB_SHA, på svenska (can-sv.pdf) och engelska (can-en.pdf)."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$title" --notes "$notes"
+            for asset in $(gh release view "$TAG" --json assets --jq '.assets[].name'); do
+              case "$asset" in
+                can-sv.pdf|can-en.pdf) ;;
+                *) gh release delete-asset "$TAG" "$asset" --yes ;;
+              esac
+            done
+            gh release upload "$TAG" sv/can-sv.pdf en/can-en.pdf --clobber
+          else
+            gh release create "$TAG" sv/can-sv.pdf en/can-en.pdf --title "$title" --notes "$notes"
+          fi

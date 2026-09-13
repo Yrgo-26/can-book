@@ -1,0 +1,269 @@
+\chapter{Answers to the exercises}
+\label{ch:svar}
+
+Here are the answers to all the exercises. Read them after you have tried for yourselves --- an
+answer you have read is not the same thing as an answer you have arrived at, and that difference is
+what the exercises are for.
+
+Where an answer rests on a calculation, the calculation is included, not just the result.
+
+\section{The bus}
+
+\solution{ex:1:1}{Wiring}
+\ans{a} $8 \cdot 7 / 2 = 28$ connections.
+\ans{b} 8 attachments, one per unit.
+\ans{c} We look for $n$ where $n(n-1)/2 = 2n$, so $n - 1 = 4$ and $n = 5$. Already at five units
+point-to-point is twice as much copper, and the gap then grows quickly.
+
+\solution{ex:1:2}{The bus level}
+\ans{a} \dom. The bus is dominant as soon as at least one node pulls it down, and node B does.
+\ans{b} Node A and node C. Both sent recessive and read back dominant. Node D sent nothing and has
+nothing to compare with.
+\ans{c} That someone else is sending at the same time, and that the other one has priority. If it
+happens in the arbitration field, A and C have lost arbitration and become receivers.
+
+\solution{ex:1:3}{Termination}
+\ans{a} There are three termination resistors instead of two: three 120~\textohm{} in parallel give
+40~\textohm. Most likely a node in the middle of the bus has a resistor switched in.
+\ans{b} Too low a termination attenuates the signal but does not destroy it on a short cable at
+moderate speed --- the edges still have time to settle. The fault shows when the cable gets longer,
+the speed higher or the environment noisier, that is, typically when the design moves off the lab
+bench.
+
+\solution{ex:1:4}{The asymmetry}
+\ans{a} Yes. Arbitration only requires that \emph{one} of the two states wins unambiguously; which
+one does not matter to the mechanism.
+\ans{b} The highest identifier would win, since a one would then overwrite a zero.
+\ans{c} Think about what the bus does when nobody is sending: it rests in the state nobody drives,
+that is, recessive. With the chosen order the idle state is the \emph{losing} state, which means a
+node that stops sending automatically withdraws. Were it the other way round, a silent bus would
+look like a node winning everything, and a node that lost power would block the bus.
+
+\section{The frame}
+
+\solution{ex:2:1}{Read the frame}
+\ans{a} $1 + 12 + 6 + 40 + 16 + 2 + 7 = 84$ bits. SOF 1, arbitration field 12 (11 identifier +
+RTR), control field 6, data $5 \cdot 8 = 40$, CRC field 16 (15 + delimiter), ACK field 2, EOF 7.
+\ans{b} 84~µs at 1~Mbit/s, before stuffing. With stuff bits and the three bits of intermission it is
+somewhat more in practice.
+\ans{c} \code{0x2A6}, since the lower numerical value wins.
+
+\solution{ex:2:2}{No address}
+\ans{a} One. The sensor sends the temperature once, with an identifier that describes the
+\emph{content}.
+\ans{b} Two frames, one to each receiver, or a broadcast address that the protocol has to define
+specially.
+\ans{c} Nothing. The third node simply starts listening for the same identifier. That is CAN's
+strongest argument: receivers can be added without the sender knowing about it.
+
+\solution{ex:2:3}{The acknowledgement}
+\ans{a} That at least one node received the frame with a correct CRC.
+\ans{b} How many did, which ones they were, whether any of them cared about the content, and
+whether anyone actually processed it. The acknowledgement concerns the transfer, not the
+processing.
+\ans{c} It reads recessive, since there is nobody else to pull the slot down. A standard-compliant
+controller treats that as an acknowledgement error, increases its transmit error counter and resends
+--- which is why a lone node on a CAN bus sends the same frame over and over until someone answers.
+
+\solution{ex:2:4}{DLC}
+\ans{a} The field sits in the control field, whose width was fixed, and four bits were what was
+available. That only 0--8 are used is the price of a field that is even in bit count rather than
+stingy.
+\ans{b} The driver's. The register layer passes the value on as it is, and the controller sequences
+according to it --- neither of them validates. Putting the check in both places is exactly how the
+two copies of the rule drift apart; it belongs where the frame is created.
+
+\section{Bit stuffing and CRC-15}
+
+\solution{ex:3:1}{Stuff a stream}
+\ans{a} \code{0000011111} becomes \code{000001111101}: a stuff bit after the five zeros and one
+after the five ones. 10 bits become 12.
+\ans{b} \code{1111111111} becomes \code{111110111110}: a stuff bit after the first five ones, and
+since the stuff bit itself breaks the run, the following five ones are counted from the start again,
+which gives one more. 10 bits become 12.
+\ans{c} \code{0101010101} is unchanged. No run reaches five, so no stuff bit is needed. 10 bits
+remain 10.
+
+\solution{ex:3:2}{Destuff}
+\ans{a} The bit at position 6 (the zero after five ones) and the bit at position 11 (the one after
+five zeros). Positions are counted from one.
+\ans{b} \code{1111100000}.
+\ans{c} A stuff error, after the sixth bit. After five equal bits the next one \emph{must} be the
+opposite; if it is not, the bit stream is broken, and the receiver rejects the frame.
+
+\solution{ex:3:3}{The CRC engine}
+The register after each bit, starting from zero:
+
+\begin{narrowtable}{@{}llll@{}}
+\thead{Bit} & \thead{Value} & \thead{Register after} & \thead{Hex} \\ \midrule
+1 & 1 & \code{100010110011001} & \code{0x4599} \\
+2 & 1 & \code{000101100110010} & \code{0x0B32} \\
+3 & 0 & \code{001011001100100} & \code{0x1664} \\
+4 & 1 & \code{110100101010001} & \code{0x6951} \\
+\end{narrowtable}
+
+Notice steps 2 and 3: when the register's top bit and the incoming bit are equal, the feedback is
+zero, and the step is a plain shift with no XOR.
+
+\solution{ex:3:4}{Why zero?}
+\ans{a} The checksum is the remainder of division by the polynomial. Appending the remainder to the
+dividend makes it divide evenly, and an even division leaves a remainder of zero. The receiver
+therefore needs no comparison --- it just checks whether the register is cleared.
+\ans{b} The same module can be used on both the transmit and receive sides, with no mode switch and
+no separate comparator circuit. In hardware that is a tangible saving, and one source of errors
+fewer.
+\ans{c} The transmitter's and receiver's checksums are then computed over different bit streams,
+since the stuff bits depend on the data. The result is that every frame containing at least one
+stuff bit is rejected as a CRC error --- that is, almost all of them. The symptom is confusing:
+short frames with alternating data work, longer frames do not.
+
+\section{Arbitration}
+
+\solution{ex:4:1}{Two nodes}
+\ans{a} \code{0x155} is \code{00101010101} and \code{0x154} is \code{00101010100}.
+\ans{b} At bit 11, the last bit of the identifier.
+\ans{c} B wins, since it sends dominant where A sends recessive. A detects that immediately, stops
+sending, becomes a receiver for B's frame and tries again when the bus has become idle.
+
+\solution{ex:4:2}{Three nodes}
+In binary: \code{0x400} is \code{10000000000}, \code{0x200} is \code{01000000000} and \code{0x201} is
+\code{01000000001}.
+\ans{a} At bit 1. A sends recessive while B and C send dominant, so A drops out straight away.
+\ans{b} At bit 11. B and C are identical for ten bits and differ only in the last one.
+\ans{c} B, with the identifier \code{0x200}.
+
+\solution{ex:4:3}{The same identifier}
+\ans{a} Nothing. The bits are identical all through the arbitration field, so neither node sees any
+difference between itself and the bus. Both believe they won.
+\ans{b} As soon as the data fields differ, one node sends recessive and reads dominant. Outside the
+arbitration field that is not a lost arbitration but a \emph{bit error}: the node aborts with an
+error frame, both frames are destroyed, and both nodes resend --- whereupon the same thing happens
+again.
+\ans{c} Because it cannot arise in operation of a correctly configured bus. Identifiers are assigned
+per sending node during system design; two nodes with the same identifier are a mistake in the
+assignment, not something that happens by itself.
+
+\solution{ex:4:4}{Starvation}
+\ans{a} It loses every arbitration against every other node, since \code{0x7FF} is the highest
+possible value and so the lowest priority. If the bus is always busy, it never gets through.
+\ans{b} No. The protocol guarantees that the \emph{highest}-priority frame gets through within a
+predictable time, and that is what determinism means in CAN. That low-priority traffic can starve is
+a consequence of the priority order, and that order is the point.
+\ans{c} For example: keep the bus load down (30--50~\% is the rule of thumb in vehicle systems);
+plan the identifiers by what is time-critical; make transmissions periodic so that no node sends as
+often as it can; or split the traffic across several buses.
+
+\section{Bit timing}
+
+\solution{ex:5:1}{Work out the timing}
+\ans{a} $50\,000\,000 / 1\,000\,000 = 50$ clock cycles per bit.
+\ans{b} $50\,000\,000 / 500\,000 = 100$ clock cycles per bit.
+\ans{c} $50 \cdot 0.7 = 35$, that is, at tick 35 of 50.
+
+\solution{ex:5:2}{The sample point}
+\ans{a} So that the signal has time to reach the farthest node on the bus and come back before the
+bit is read. That is the propagation segment's job, and the sample point has to come after it.
+\ans{b} During arbitration a node would read the bus before another node's dominant bit had arrived,
+and so believe it had won when it had lost. Two nodes would then send at the same time for the rest
+of the frame.
+\ans{c} The propagation segment. It is the segment that represents the travel time, and that is why
+cable length and bit rate are linked.
+
+\solution{ex:5:3}{Stuffing and sync}
+\ans{a} Five.
+\ans{b} Bit stuffing, the rule of five. After five equal bits a bit of the opposite value is always
+inserted, which guarantees an edge.
+\ans{c} The receivers could go long stretches without edges to resynchronise on, and drift until
+they sample the wrong bit. In practice that would require a clock line or considerably more accurate
+oscillators --- which is the very reason stuffing exists.
+
+\solution{ex:5:4}{Two symptoms}
+\ans{a} Nothing works. The nodes are out of phase from SOF onwards, so every frame is gibberish at
+the other end. The fault shows immediately and is therefore the kinder of the two.
+\ans{b} Most bits are read the same, but those close to an edge or affected by propagation delay are
+read differently. The symptom is sporadic CRC and stuff errors that get worse with a longer cable and
+higher load. It is harder to debug because it looks like a bad cable or a noisy environment, and
+because it works well enough to make you believe the basic setup is right.
+
+\section{Error handling}
+
+\solution{ex:6:1}{Who sees the error?}
+\ans{a} CRC error. The receivers detect it; the transmitter learns of it indirectly, through nobody
+acknowledging.
+\ans{b} Form error. Every node sees it, since every node knows which bits must be recessive.
+\ans{c} Acknowledgement error. Only the transmitter sees it: it lets go of the ACK slot and reads back
+recessive.
+\ans{d} Stuff error. Every node sees it, since every node counts equal bits in a row.
+
+\solution{ex:6:2}{The counters}
+\ans{a} $8 \cdot 8 = 64$.
+\ans{b} $64 - 20 = 44$.
+\ans{c} Error active in both cases, since the limit for error passive is at 127.
+
+Notice the proportions: eight errors cost 64, and it takes 64 successful transmissions to work them
+off. The counter is deliberately slower on the way down than on the way up.
+
+\solution{ex:6:3}{The asymmetry}
+\ans{a} Because the counters do not measure how many errors have occurred, but how likely it is that
+the error is the node's own. A transmitting node is involved in every error it sees; a receiving
+node is one of many that saw the same error. The one sending is therefore a more likely source of
+the error, and is penalised accordingly.
+\ans{b} The broken node is involved in \emph{every} error and climbs eight steps at a time, while the
+healthy node on a noisy bus rises one step at a time and has time to work it off between
+disturbances. After a while the broken node is error passive or bus off while the healthy one is
+still error active.
+
+\solution{ex:6:4}{Bus off}
+\ans{a} Because a node with a broken transmitter reports errors on every frame --- including the
+frames that are entirely correct. Its error frames are dominant and destroy other nodes' traffic, so
+a single broken node can take down the whole bus.
+\ans{b} It would have become unusable. Every frame from every node would have been aborted by the
+broken node's error flag, and all traffic would have stopped.
+\ans{c} Because the fault may be transient: a loose connector, a disturbance, a voltage dip. A
+permanent shutdown would require someone to go out and restart the node by hand, even when the fault
+is long gone.
+
+\section{The simplified controller}
+
+\solution{ex:7:1}{What is missing}
+\ans{a} Complete: the loser becomes a receiver and receives the winning frame, and resends its own
+automatically when the bus has become idle. Simplified: the loser sets its error flag, leaves the
+transmitter role and goes idle --- it does not receive the frame that won, and does not resend.
+\ans{b} Complete: the receiver aborts with an error frame, every node discards the frame, and the
+transmitter resends. Simplified: the receiver rejects the frame and sets the error flag. No error
+frame is sent, so the transmitter knows nothing.
+\ans{c} Complete: the transmitter detects the acknowledgement error and resends. Simplified: the
+transmitter never reads back the ACK slot, so the transfer completes just as if all had gone well.
+\ans{d} Complete: both end up in the receive queue. Simplified: the second overwrites the first if the
+first has not yet been acknowledged, and the newest wins.
+
+\solution{ex:7:2}{Sticky bits}
+\ans{a} $40 \cdot 10^{-6} \cdot 50 \cdot 10^{6} = 2000$ clock cycles.
+\ans{b} Practically nothing. The pulse is one cycle long, and the probability that a poll happens to
+hit exactly that cycle is about 1 in 2000. The software would miss almost every event, and the few
+it caught would look random.
+\ans{c} Because an automatic clear on read makes it impossible to read the status twice, and so
+impossible to write code that first checks a bit and then acts on it. An explicit clear also
+separates ``I have seen the event'' from ``I have handled it'' --- and it is the software, not the
+hardware, that knows when the latter is true.
+
+\solution{ex:7:3}{Two steps}
+\ans{a} It confuses \emph{the port is free again} with \emph{the frame got through}. The status bit
+comes back both after a successful transmission and after a lost arbitration.
+\ans{b} Wait for the port to become free, and \emph{then} read the error flag. Only that combination
+says how it went.
+\ans{c} Lost arbitration, stuff error, failed CRC check, and a received remote frame. All four give
+the same single bit, so the driver cannot tell them apart.
+
+\solution{ex:7:4}{The boundary}
+\ans{a} For example by buffering received frames in a queue, so that the software never noticed that
+the controller holds only one. Or by automatically clearing the status bit on read, so that the
+software did not have to acknowledge.
+\ans{b} Hidden behaviour is behaviour you cannot reason about. A queue that sometimes overflows gives
+frames that vanish without a trace, and the debugging starts in the wrong place: in the software,
+which did the right thing. A limitation you know about can be planned for; one you do not know about
+can only be run into.
+\ans{c} That an interface should be \emph{honest} rather than helpful. A layer that hides the
+properties of the underlying hardware does not move the problem, it only makes it invisible --- and
+what is invisible cannot be tested, measured or reasoned about. The same principle applies to a
+driver API: it should say what the hardware does, not what you wish it did.

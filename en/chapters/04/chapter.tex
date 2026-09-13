@@ -1,0 +1,174 @@
+\chapter{Arbitration}
+\label{ch:arbitrering}
+
+{\large\itshape How a bus without a master decides who gets to send.\par}
+
+\begin{chapterbox}{In this chapter}
+\begin{itemize}
+  \item Multi-master: no node allocates the bus, and no node needs to.
+  \item Arbitration bit by bit, worked by hand with two and three nodes.
+  \item Why it is called non-destructive, and what that saves.
+  \item Priority inversion, starvation, and how a real system avoids them.
+\end{itemize}
+\end{chapterbox}
+
+\section{No master}
+
+Most buses solve access with a master. One node decides who gets to talk, and the others wait
+their turn. It works, and it costs a node that everyone depends on.
+
+CAN has no such thing. Every node may start sending as soon as the bus has been idle for three bits
+(the intermission). If two nodes start at the same time, the bus resolves it by itself, while it
+happens, without anyone losing time.
+
+The mechanism is the asymmetry \kapref{ch:buss} set out, used in a single place: during the
+arbitration field, every transmitting node compares, bit by bit, what it sends with what is
+actually on the bus.
+
+\begin{aside}
+\textbf{The rule, in full:} if a node sends \rec{} and reads back \dom{}, it has lost. It stops
+sending immediately and becomes a receiver.
+\end{aside}
+
+If it sends dominant and reads dominant, all is as it should be --- either it is alone, or someone
+else is sending the same bit. If it sends recessive and reads recessive, likewise.
+
+The only combination that tells it anything is therefore recessive out, dominant in: someone else
+is sending, and the other one has a zero where we have a one. Since the identifier is sent MSB
+first, that means the other identifier is numerically \emph{lower}, and so has higher priority.
+
+\section{Two nodes, bit by bit}
+
+Node A wants to send the identifier \code{0x2A7}, node B \code{0x2A3}. Both start at the same time.
+
+In binary, eleven bits, MSB first:
+
+\begin{console}
+bit:        1 2 3 4 5 6 7 8 9 10 11
+A (0x2A7):  0 1 0 1 0 1 0 0 1  1  1
+B (0x2A3):  0 1 0 1 0 1 0 0 0  1  1
+                            ^ this is where they differ
+\end{console}
+
+\begin{booktable}{@{}lllll@{}}
+\thead{Bit} & \thead{A sends} & \thead{B sends} & \thead{The bus} & \thead{Event} \\ \midrule
+1--8 & same & same & same & Nobody notices anything \\
+9 & \rec{} (1) & \dom{} (0) & \dom{} & A reads back dominant: \textbf{A loses} \\
+10--11 & --- & sends on & B's bits & B continues undisturbed \\
+\end{booktable}
+
+Note what does \emph{not} happen: no collision, no lost time, no restart. B's frame continues from
+bit 9 as if A had never existed. A's frame was never sent --- it just stopped, midway, and A waits
+out B's frame to try again afterwards.
+
+That is why it is called \textbf{non-destructive arbitration}: the conflict is resolved without
+anyone's data being destroyed.
+
+\bookfigure{arbitration}{Arbitration between two nodes. A withdraws and becomes a receiver at
+bit 9; B's frame runs on uninterrupted.}{fig:arbitration}
+
+\section{Three nodes}
+
+With more nodes it is the same rule, applied by all of them at once. Three nodes with the
+identifiers \code{0x100}, \code{0x0FF} and \code{0x2A7}:
+
+\begin{console}
+bit:        1 2 3 4 5 6 7 8 9 10 11
+A (0x100):  0 0 1 0 0 0 0 0 0  0  0
+B (0x0FF):  0 0 0 1 1 1 1 1 1  1  1
+C (0x2A7):  0 1 0 1 0 1 0 0 1  1  1
+              ^ ^
+              | bit 3: A sends recessive, B dominant -> A drops out
+              bit 2: C sends recessive, A and B dominant -> C drops out
+\end{console}
+
+At bit 1 all three send dominant, so nobody notices anything. At bit 2 C drops out, at bit 3 A
+drops out. B wins, and has the lowest identifier --- which is always the outcome, because ``lowest
+numerically'' and ``first dominant bit'' are the same thing when the bits are sent MSB first.
+
+\section{What the loser does}
+
+The losing node becomes a receiver for the rest of the frame. That is not just politeness: it
+\emph{must} receive the winning frame, since it may very well be meant for it.
+
+When the bus has become idle again, it tries again. And since its identifier is unchanged, it will
+lose again if the same high-priority node sends again --- which leads to the next section.
+
+\begin{simplification}
+\note[Simplification] The simplified controller in \kapref{ch:kursen} does \emph{not} receive the
+frame it lost to. It leaves the transmitter role, sets its error flag and goes back to idle. That
+is a deliberate simplification, and it is visible to the software: a node that has lost an
+arbitration misses the frame that won.
+\end{simplification}
+
+\section{Starvation and priority inversion}
+
+Arbitration is fair to priority, not to nodes. A node with a high identifier on a heavily loaded
+bus can in principle never get through --- it loses every time.
+
+This is known and accepted behaviour, and it is handled in the system design rather than in the
+protocol:
+
+\begin{itemize}
+  \item \textbf{Bus load is kept down.} The rule of thumb in vehicle systems is not to plan for
+    more than about 30--50~\% load, precisely to leave room for low-priority frames.
+  \item \textbf{Identifiers are planned.} The priority order is set by what is time-critical, not
+    by what happened to get which number.
+  \item \textbf{Transmissions are made periodic.} A node that sends as often as it can is a node
+    that starves everyone below it.
+\end{itemize}
+
+\begin{aside}
+\note A frame that has lost arbitration is delayed, but not corrupted. That is why CAN is called
+\emph{deterministic} for the highest-priority frame: its worst-case delay can be calculated. For the
+other frames it can too, but the answer grows the further down the order they are.
+\end{aside}
+
+\section{What the transmitter never learns}
+
+A node that has lost arbitration knows that it lost. A node that won only knows that it got
+through.
+
+Above all: \textbf{the transmitter never learns whether anyone lost to it.} There is no counter, no
+report, no difference in the frame. That does not matter to CAN, but it matters to whoever is
+debugging a system where one node never seems to get through --- the symptom is visible only at the
+loser.
+
+\section*{Exercises}
+
+\exercise{Two nodes}{Calculation}
+\label{ex:4:1}
+Node A sends the identifier \code{0x155}, node B sends \code{0x154}. Both start at the same time.
+\begin{enumerate}[a)]
+  \item Write out both identifiers in binary, eleven bits, MSB first.
+  \item At which bit do they differ?
+  \item Who wins, and what does the loser do?
+\end{enumerate}
+
+\exercise{Three nodes}{Calculation}
+\label{ex:4:2}
+Three nodes start sending at the same time, with the identifiers \code{0x400}, \code{0x200} and
+\code{0x201}.
+\begin{enumerate}[a)]
+  \item At which bit does the first node drop out?
+  \item At which bit is it settled between the remaining two?
+  \item Who wins?
+\end{enumerate}
+
+\exercise{The same identifier}{Reasoning}
+\label{ex:4:3}
+Two nodes by mistake send the same identifier at the same time, but with different data.
+\begin{enumerate}[a)]
+  \item What happens during the arbitration field?
+  \item What happens when the data fields start to differ?
+  \item Why is this a design error rather than an operational fault?
+\end{enumerate}
+
+\exercise{Starvation}{Reasoning}
+\label{ex:4:4}
+A node with the identifier \code{0x7FF} never gets through on a heavily loaded bus.
+\begin{enumerate}[a)]
+  \item Why not?
+  \item Is it a flaw in the protocol? Justify your answer.
+  \item Give two measures at system level that would help.
+\end{enumerate}

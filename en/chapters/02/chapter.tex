@@ -1,0 +1,241 @@
+\chapter{The frame}
+\label{ch:frameformat}
+
+{\large\itshape Field by field, from SOF to EOF.\par}
+
+\begin{chapterbox}{In this chapter}
+\begin{itemize}
+  \item The data frame's seven fields, and what each of them is for.
+  \item The identifier, which is two things at once: address and priority.
+  \item Why CAN has no destination address.
+  \item DLC, and why it is four bits when the payload is at most eight bytes.
+  \item The acknowledgement that every receiver writes into the same bit.
+\end{itemize}
+\end{chapterbox}
+
+\section{The shape of the frame}
+
+A CAN data frame with an 11-bit identifier looks like this:
+
+\bookfigure{frame_layout}{The data frame's fields. The widths are in bits, before bit
+stuffing.}{fig:frame}
+
+Seven fields, and one boundary that matters more than the others: everything up to and including
+the RTR bit is the \textbf{arbitration field}, and that is where several nodes sending at the same
+time settle who gets to continue (\kapref{ch:arbitrering}).
+
+\begin{booktable}{@{}llL@{}}
+\thead{Field} & \thead{Bits} & \thead{Content} \\ \midrule
+SOF & 1 & Start of frame. A dominant bit, saying that a frame begins. \\
+Identifier & 11 & What the frame contains, and with it its priority. \\
+RTR & 1 & Remote transmission request: dominant for a data frame. \\
+IDE & 1 & Identifier extension: dominant for 11-bit identifiers. \\
+r0 & 1 & Reserved, dominant. \\
+DLC & 4 & Data length code: the number of data bytes, 0--8. \\
+Data & 0--64 & The payload, zero to eight bytes. \\
+CRC & 15 & Checksum over everything before it. \\
+CRC delimiter & 1 & Recessive. \\
+ACK slot & 1 & The transmitter lets go; a receiver pulls it down. \\
+ACK delimiter & 1 & Recessive. \\
+EOF & 7 & End of frame, seven recessive bits. \\
+\end{booktable}
+
+After EOF there is also the \textbf{intermission}, three recessive bits during which nobody may
+start sending. Together with EOF that makes ten recessive bits in a row between two frames --- a
+pattern that cannot occur anywhere else, because bit stuffing (\kapref{ch:stuffing}) means that five
+equal bits in a row is the most that ever appears inside a frame.
+
+\begin{aside}
+\note[The arithmetic] $1 + 12 + 6 + 64 + 16 + 2 + 7 = 108$ bits for the longest data frame, before
+stuffing. Bit stuffing adds at most twenty-odd, so a maximal frame is around 130 bits. At
+1~Mbit/s it therefore takes about 130~µs. That figure is worth remembering: it is the answer to
+``how long can a transmission go on?''.
+\end{aside}
+
+\section{The identifier}
+
+The identifier is CAN's most distinctive design choice, and it is two things at once.
+
+\subsection{It says what the frame contains}
+
+It is \textbf{not} a receiver address. It describes the \emph{content}:
+
+\begin{narrowtable}{@{}ll@{}}
+\thead{Identifier} & \thead{Meaning} \\ \midrule
+\code{0x301} & Engine speed \\
+\code{0x302} & Coolant temperature \\
+\code{0x400} & Status request \\
+\end{narrowtable}
+
+A node sending \code{0x301} does not say ``to the instrument cluster'', it says ``the engine speed
+is this''. Who listens is not the sender's problem, and that has consequences that are easy to miss
+at first:
+
+\begin{itemize}
+  \item \textbf{Several receivers can act on the same frame.} Both the instrument cluster and the
+    gearbox controller may need the engine speed, and neither needs to know about the other.
+  \item \textbf{A new node can be added without changing any old one.} It simply starts listening
+    for the identifiers it cares about.
+  \item \textbf{Filtering is done by the receiver.} Every node receives every frame and decides for
+    itself whether it concerns it --- in software, or in the controller's filter hardware.
+\end{itemize}
+
+\subsection{It sets the priority}
+
+At the same time the identifier is the frame's priority, and there \textbf{the lower numerical
+value wins}. That follows directly from \kapref{ch:buss}: the identifier is sent MSB first, a zero
+is dominant, and the dominant bit wins.
+
+This means the address space has to be planned. An identifier is not just a name; it is a place in
+a priority order that applies to the whole bus. Brakes get low numbers, cabin heating high ones.
+
+\begin{aside}
+\note[A common pitfall] Two nodes must never send the \emph{same} identifier. Two frames with the
+same identifier are identical bit for bit through the whole arbitration field, so neither node
+detects the other --- and as soon as their data fields differ, a bit error occurs in the middle of
+the frame. Identifiers are assigned per sending node, not per message type.
+\end{aside}
+
+\subsection{Extended identifiers}
+
+CAN 2.0B allows 29-bit identifiers. The difference shows in the IDE bit: recessive instead of
+dominant, followed by another 18 identifier bits. This book sticks to 11 bits, but it is worth
+knowing why the choice shows in the frame: a node that understands only 11 bits must be able to
+see, early and unambiguously, that it does not understand this frame.
+
+Note the priority consequence too: an 11-bit frame with the same leading bits always wins over a
+29-bit one, because its IDE bit is dominant.
+
+\section{RTR and remote frames}
+
+The RTR bit distinguishes two kinds of frame:
+
+\begin{narrowtable}{@{}lll@{}}
+\thead{RTR} & \thead{Kind of frame} & \thead{Meaning} \\ \midrule
+\dom{} (0) & Data frame & ``Here is the data.'' \\
+\rec{} (1) & Remote frame & ``Send me the data.'' \\
+\end{narrowtable}
+
+A \textbf{remote frame} has the same identifier as the data frame it asks for, a DLC but \emph{no}
+data field. The idea is that a node can ask for a value instead of waiting for it to be sent.
+
+In practice remote frames are rarely used in modern designs. They complicate more than they add:
+two nodes can answer the same request, and a node that does not understand the mechanism sees a
+frame whose DLC does not match the length of its data field.
+
+That RTR sits \emph{inside} the arbitration field, on the other hand, is not arbitrary. It means a
+data frame always wins over a remote frame with the same identifier --- whoever has the data takes
+precedence over whoever asks for it, which is exactly the right priority.
+
+\section{The control field and DLC}
+
+Three bits of administration, then four bits of length:
+
+\begin{itemize}
+  \item \textbf{IDE} --- dominant for 11-bit identifiers.
+  \item \textbf{r0} --- reserved, sent dominant. It is there for future use, and that future never
+    came for classical CAN.
+  \item \textbf{DLC} --- four bits, value 0--8.
+\end{itemize}
+
+Four bits hold 0--15, but only 0--8 are meaningful. What happens to 9--15? In the standard they are
+reserved and are to be treated as 8. In practice it is one of the points where controllers differ
+--- and that is why a driver that \emph{sends} must never produce a DLC above 8, whatever the
+hardware happens to do with it.
+
+\section{The CRC field}
+
+A fifteen-bit checksum, computed over everything from SOF up to and including the data field,
+followed by a recessive delimiter. How it is computed is described in \kapref{ch:stuffing}.
+
+The delimiter is there for a practical reason: it gives the receivers a known, recessive bit to
+brace against before the ACK slot, which is the only bit in the whole frame where someone other
+than the transmitter drives the bus.
+
+\section{The ACK field}
+
+Here something happens that has no counterpart in a home-grown protocol.
+
+The transmitter sends the ACK slot \textbf{recessive} --- that is, it lets go. Every receiver that
+has received the frame and found the CRC to be correct pulls it down \textbf{dominant} at the same
+moment. The transmitter reads the bus back and sees:
+
+\begin{narrowtable}{@{}ll@{}}
+\thead{The transmitter reads} & \thead{Conclusion} \\ \midrule
+\dom{} & At least one node received the frame without error \\
+\rec{} & Nobody did \\
+\end{narrowtable}
+
+Three things are worth dwelling on:
+
+\textbf{The acknowledgement costs nothing.} It is a single bit, inside the frame, and it needs no
+reply frame. Compare that with an ACK message that has to be built, sent, arbitrated again and
+acknowledged in its turn.
+
+\textbf{It does not say \emph{who}.} Every receiver pulls down the same bit at the same moment. The
+transmitter knows that \emph{somebody} heard, never how many or which. If that is needed, the
+application has to reply with a frame of its own.
+
+\textbf{It does not say that anyone \emph{cared}.} A node that filters the frame out as
+uninteresting acknowledges it anyway, because it received it without error. The acknowledgement is
+a receipt for the \emph{transfer}, not for the \emph{processing}.
+
+\begin{simplification}
+\note[Simplification] The simplified controller in \kapref{ch:kursen} \emph{lets go} of the ACK slot
+as a transmitter and \emph{pulls it down} as a receiver, exactly as the standard says --- but it
+never reads back what happened there. A frame that nobody acknowledges therefore completes as if
+everything went well.
+\end{simplification}
+
+\section{EOF and intermission}
+
+Seven recessive bits end the frame, and three more of intermission keep the bus idle before anyone
+may start again.
+
+Seven recessive in a row is more than bit stuffing ever allows inside a frame, which makes EOF an
+unambiguous end marker: a receiver that sees seven recessive bits knows the frame is over, no
+matter where it lost the thread.
+
+This is also where error signalling happens: a node that detects an error aborts by sending six
+dominant bits in a row --- a pattern that is impossible in a correct frame, and that therefore
+cannot be mistaken for data. \Kapref{ch:fel} goes through it.
+
+\section*{Exercises}
+
+\exercise{Read the frame}{Decoding}
+\label{ex:2:1}
+A frame has the identifier \code{0x2A7}, DLC 5 and the data bytes \code{01 02 03 04 05}.
+\begin{enumerate}[a)]
+  \item How many bits is the frame, before bit stuffing?
+  \item How long does it take at 1~Mbit/s, before stuffing?
+  \item Which identifier would have won over it in an arbitration: \code{0x2A6} or
+    \code{0x2A8}?
+\end{enumerate}
+
+\exercise{No address}{Reasoning}
+\label{ex:2:2}
+A system has a temperature sensor and two nodes that both need the temperature.
+\begin{enumerate}[a)]
+  \item How many frames does the sensor have to send?
+  \item What would the same thing have looked like in a protocol with a destination address?
+  \item A third node is added that also wants the temperature. What has to change in the sensor?
+\end{enumerate}
+
+\exercise{The acknowledgement}{Reasoning}
+\label{ex:2:3}
+A node sends a frame and reads back a dominant ACK slot.
+\begin{enumerate}[a)]
+  \item What does it know for certain?
+  \item What does it not know?
+  \item The node is alone on the bus and sends. What does it read in the ACK slot, and what should a
+    standard-compliant controller do then?
+\end{enumerate}
+
+\exercise{DLC}{Reasoning}
+\label{ex:2:4}
+DLC is four bits, but only the values 0--8 are meaningful.
+\begin{enumerate}[a)]
+  \item Why was the field made four bits wide?
+  \item A driver writes DLC 9 to its controller. Whose responsibility is it that this does not
+    happen, and why that side in particular?
+\end{enumerate}

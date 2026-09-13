@@ -1,0 +1,59 @@
+\chapter*{Preface}
+\addcontentsline{toc}{chapter}{Preface}
+\markboth{Preface}{Preface}
+
+A home-grown protocol is an instructive thing to build. You decide for yourself where the frame
+begins, how long it is, how it is protected against errors, and what should happen when a reply
+never comes. Every mechanism becomes your own --- and every mechanism becomes something that has
+to be written and maintained.
+
+This book is about what happens when someone else has already decided all of that, once, and cast
+it in silicon.
+
+CAN dates from 1986, it is in every car built since the mid-nineties, and it solves almost exactly
+the problems you have just solved yourselves --- only in hardware, and better. Framing, checksum,
+collision handling and acknowledgement all live in the controller. What is left for the software
+is to hand over an identifier, a length and a few data bytes, and then read back how it went.
+
+\begin{aside}
+\note That CAN does this for you does not mean you get away without understanding it. If you build
+the controller, the protocol is your requirements specification, bit for bit. If you write the
+driver, you have to handle precisely what the controller \emph{cannot} tell you: why a lost
+arbitration looks like a successful transmission, why a frame that nobody acknowledges completes
+anyway, and why a received frame can vanish from under your nose. All of that follows from how CAN
+works, and it is all in this book.
+\end{aside}
+
+\section*{What the book covers}
+
+\Kapref{ch:buss} starts at the wires: why a shared bus, what dominant and recessive bits are, and
+why that asymmetry is the whole foundation. \Kapref{ch:frameformat} goes through the CAN frame
+field by field. \Kapref{ch:stuffing} covers bit stuffing and the CRC-15, the two mechanisms that
+let a frame survive a noisy bus. \Kapref{ch:arbitrering} works through arbitration bit by bit, by
+hand. \Kapref{ch:tajming} is about bit timing and the sample point: how nodes without a shared
+clock still read the same bit at the same time. \Kapref{ch:fel} describes error handling in real
+CAN --- error frames, error counters and bus-off.
+
+\Kapref{ch:kursen} is the only chapter in the book that is not about CAN in general. It describes
+the simplified controller that is built in teaching, what it implements of all that comes before,
+and what it deliberately leaves out. That chapter is the one that comes in useful when debugging
+--- from either side.
+
+\section*{What the book does not cover}
+
+The book describes \textbf{classical CAN} with 11-bit identifiers, that is CAN 2.0A. Extended
+29-bit identifiers (2.0B) are mentioned where they affect the shape of the frame, but are not
+worked through. CAN~FD and CAN~XL are out of scope, as are higher layers such as CANopen and
+J1939.
+
+Nor does the book describe the electrical side in detail: differential signalling, the physics of
+termination and the effect of cable length are touched on only as far as is needed to understand
+why the bus looks the way it does.
+
+\section*{Exercises}
+
+Every chapter ends with a few exercises. They are done with pen and paper --- there is no code to
+compile in this book --- and the answers to all of them are in Appendix~A.
+
+The exercises are short on purpose. They are there to check that the chapter stuck, not to take up
+an evening.
